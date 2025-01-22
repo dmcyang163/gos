@@ -1,0 +1,25 @@
+{
+    "nodes": [
+        {
+            "id": "node_a",
+            "port": "1234",
+            "bootstrap_node": "",
+            "max_conns": 100,
+            "log_level": "info"
+        },
+        {
+            "id": "node_b",
+            "port": "1235",
+            "bootstrap_node": "localhost:1234",
+            "max_conns": 100,
+            "log_level": "info"
+        },
+        {
+            "id": "node_c",
+            "port": "1236",
+            "bootstrap_node": "localhost:1234",
+            "max_conns": 100,
+            "log_level": "info"
+        }
+    ]
+}
