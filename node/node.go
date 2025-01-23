@@ -1,9 +1,9 @@
+// node.go
 package main
 
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -268,54 +268,9 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 	}
 
 	// 解压消息
-	msg, err := n.decompressMessage(msgBytes)
+	msg, err := decompressMessage(msgBytes)
 	if err != nil {
 		return Message{}, fmt.Errorf("error decompressing message: %w", err)
-	}
-
-	return msg, nil
-}
-
-// compressMessage compresses a message using Gzip.
-func (n *Node) compressMessage(msg Message) ([]byte, error) {
-	// 从池中获取缓冲区
-	buf := n.compressorPool.Get().(*bytes.Buffer)
-	defer n.compressorPool.Put(buf) // 使用完毕后放回池中
-	buf.Reset()                     // 重置缓冲区
-
-	// 使用 gzip 压缩消息
-	gz := gzip.NewWriter(buf)
-	if err := json.NewEncoder(gz).Encode(msg); err != nil {
-		return nil, fmt.Errorf("failed to encode message: %w", err)
-	}
-	gz.Close()
-
-	return buf.Bytes(), nil
-}
-
-// decompressMessage decompresses a message using Gzip.
-func (n *Node) decompressMessage(data []byte) (Message, error) {
-	// 从池中获取缓冲区
-	buf := n.decompressorPool.Get().(*bytes.Buffer)
-	defer n.decompressorPool.Put(buf) // 使用完毕后放回池中
-	buf.Reset()                       // 重置缓冲区
-
-	// 使用 gzip 解压缩消息
-	gz, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return Message{}, fmt.Errorf("failed to decompress message: %w", err)
-	}
-	defer gz.Close()
-
-	// 将解压缩后的数据写入缓冲区
-	if _, err := io.Copy(buf, gz); err != nil {
-		return Message{}, fmt.Errorf("failed to copy decompressed data: %w", err)
-	}
-
-	// 解码消息
-	var msg Message
-	if err := json.NewDecoder(buf).Decode(&msg); err != nil {
-		return Message{}, fmt.Errorf("failed to decode message: %w", err)
 	}
 
 	return msg, nil
@@ -352,7 +307,7 @@ func (n *Node) startHeartbeat() {
 		for _, conn := range conns {
 			go func(c net.Conn) {
 				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-				if err := n.net.SendMessage(c, msg, n.compressMessage); err != nil {
+				if err := n.net.SendMessage(c, msg, compressMessage); err != nil {
 					n.logger.WithError(err).Error("Heartbeat failed")
 					n.net.removeConn(c)
 					n.peers.RemovePeer(c.RemoteAddr().String())
@@ -397,7 +352,7 @@ func (n *Node) connectToPeer(peerAddr string) {
 // requestPeerList requests the peer list from a connection.
 func (n *Node) requestPeerList(conn net.Conn) {
 	msg := Message{Type: MessageTypePeerListReq, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	if err := n.net.SendMessage(conn, msg, n.compressMessage); err != nil {
+	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
 		n.logger.WithError(err).Error("Error requesting peer list")
 	}
 }
@@ -417,7 +372,7 @@ func (n *Node) sendPeerList(conn net.Conn) {
 	}
 
 	msg := Message{Type: MessageTypePeerList, Data: string(peerList), Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	if err := n.net.SendMessage(conn, msg, n.compressMessage); err != nil {
+	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
 		n.logger.WithError(err).Error("Error sending peer list")
 	}
 }
@@ -428,7 +383,7 @@ func (n *Node) send(message string) {
 	conns := n.net.GetConns()
 	for _, conn := range conns {
 		go func(c net.Conn) {
-			if err := n.net.SendMessage(c, msg, n.compressMessage); err != nil {
+			if err := n.net.SendMessage(c, msg, compressMessage); err != nil {
 				n.logger.WithError(err).Error("Error sending message")
 				n.net.removeConn(c)
 			}
