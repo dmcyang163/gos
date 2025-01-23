@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -37,6 +39,10 @@ type Node struct {
 	peers  *PeerManager
 	router *MessageRouter
 	pool   *ants.Pool // Goroutine 池
+
+	// 使用 sync.Pool 复用压缩和解压缩的缓冲区
+	compressorPool   *sync.Pool
+	decompressorPool *sync.Pool
 }
 
 // NewNode creates a new Node instance.
@@ -90,8 +96,8 @@ func NewNode(config *Config, names []NameEntry) *Node {
 	router.RegisterHandler(MessageTypeChat, &ChatHandler{})
 	router.RegisterHandler(MessageTypePing, &PingHandler{})
 	router.RegisterHandler(MessageTypePong, &PongHandler{})
-	router.RegisterHandler(MessageTypeFileTransfer, &FileTransferHandler{}) // 注册文件传输处理器
-	router.RegisterHandler(MessageTypeNodeStatus, &NodeStatusHandler{})     // 注册节点状态处理器
+	router.RegisterHandler(MessageTypeFileTransfer, &FileTransferHandler{})
+	router.RegisterHandler(MessageTypeNodeStatus, &NodeStatusHandler{})
 
 	// 初始化 Goroutine 池
 	pool, err := ants.NewPool(100) // 创建 Goroutine 池，最大并发数为 100
@@ -99,20 +105,34 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		logger.WithError(err).Fatal("Failed to create Goroutine pool")
 	}
 
+	// 初始化 sync.Pool 用于复用缓冲区
+	compressorPool := &sync.Pool{
+		New: func() interface{} {
+			return new(bytes.Buffer) // 用于压缩的缓冲区
+		},
+	}
+	decompressorPool := &sync.Pool{
+		New: func() interface{} {
+			return new(bytes.Buffer) // 用于解压缩的缓冲区
+		},
+	}
+
 	return &Node{
-		Port:           config.Port,
-		logger:         logger,
-		config:         config,
-		Name:           name,
-		Description:    entry.Description,
-		SpecialAbility: entry.SpecialAbility,
-		Tone:           entry.Tone,
-		Dialogues:      entry.Dialogues,
-		processedMsgs:  sync.Map{},
-		net:            &NetworkManager{Conns: sync.Map{}},
-		peers:          &PeerManager{},
-		router:         router,
-		pool:           pool, // 将 Goroutine 池添加到 Node 结构体中
+		Port:             config.Port,
+		logger:           logger,
+		config:           config,
+		Name:             name,
+		Description:      entry.Description,
+		SpecialAbility:   entry.SpecialAbility,
+		Tone:             entry.Tone,
+		Dialogues:        entry.Dialogues,
+		processedMsgs:    sync.Map{},
+		net:              NewNetworkManager(),
+		peers:            &PeerManager{},
+		router:           router,
+		pool:             pool,
+		compressorPool:   compressorPool,
+		decompressorPool: decompressorPool,
 	}
 }
 
@@ -248,12 +268,98 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 	}
 
 	// 解压消息
-	msg, err := decompressMessage(msgBytes)
+	msg, err := n.decompressMessage(msgBytes)
 	if err != nil {
 		return Message{}, fmt.Errorf("error decompressing message: %w", err)
 	}
 
 	return msg, nil
+}
+
+// compressMessage compresses a message using Gzip.
+func (n *Node) compressMessage(msg Message) ([]byte, error) {
+	// 从池中获取缓冲区
+	buf := n.compressorPool.Get().(*bytes.Buffer)
+	defer n.compressorPool.Put(buf) // 使用完毕后放回池中
+	buf.Reset()                     // 重置缓冲区
+
+	// 使用 gzip 压缩消息
+	gz := gzip.NewWriter(buf)
+	if err := json.NewEncoder(gz).Encode(msg); err != nil {
+		return nil, fmt.Errorf("failed to encode message: %w", err)
+	}
+	gz.Close()
+
+	return buf.Bytes(), nil
+}
+
+// decompressMessage decompresses a message using Gzip.
+func (n *Node) decompressMessage(data []byte) (Message, error) {
+	// 从池中获取缓冲区
+	buf := n.decompressorPool.Get().(*bytes.Buffer)
+	defer n.decompressorPool.Put(buf) // 使用完毕后放回池中
+	buf.Reset()                       // 重置缓冲区
+
+	// 使用 gzip 解压缩消息
+	gz, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return Message{}, fmt.Errorf("failed to decompress message: %w", err)
+	}
+	defer gz.Close()
+
+	// 将解压缩后的数据写入缓冲区
+	if _, err := io.Copy(buf, gz); err != nil {
+		return Message{}, fmt.Errorf("failed to copy decompressed data: %w", err)
+	}
+
+	// 解码消息
+	var msg Message
+	if err := json.NewDecoder(buf).Decode(&msg); err != nil {
+		return Message{}, fmt.Errorf("failed to decode message: %w", err)
+	}
+
+	return msg, nil
+}
+
+// handleMessageWithPool uses a Goroutine pool to handle messages.
+func (n *Node) handleMessageWithPool(conn net.Conn, msg Message) {
+	_ = n.pool.Submit(func() {
+		n.router.RouteMessage(n, conn, msg)
+	})
+}
+
+// generateTraceID generates a unique trace ID.
+func generateTraceID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// startDiscovery periodically broadcasts the peer list to all connected peers.
+func (n *Node) startDiscovery() {
+	for {
+		time.Sleep(10 * time.Second)
+		conns := n.net.GetConns()
+		for _, conn := range conns {
+			n.sendPeerList(conn)
+		}
+	}
+}
+
+// startHeartbeat periodically sends ping messages to all connected peers.
+func (n *Node) startHeartbeat() {
+	for {
+		time.Sleep(5 * time.Second)
+		conns := n.net.GetConns()
+		for _, conn := range conns {
+			go func(c net.Conn) {
+				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
+				if err := n.net.SendMessage(c, msg, n.compressMessage); err != nil {
+					n.logger.WithError(err).Error("Heartbeat failed")
+					n.net.removeConn(c)
+					n.peers.RemovePeer(c.RemoteAddr().String())
+				}
+			}(conn)
+		}
+	}
 }
 
 // connectToPeer attempts to connect to a peer.
@@ -291,7 +397,7 @@ func (n *Node) connectToPeer(peerAddr string) {
 // requestPeerList requests the peer list from a connection.
 func (n *Node) requestPeerList(conn net.Conn) {
 	msg := Message{Type: MessageTypePeerListReq, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	if err := n.net.SendMessage(conn, msg); err != nil {
+	if err := n.net.SendMessage(conn, msg, n.compressMessage); err != nil {
 		n.logger.WithError(err).Error("Error requesting peer list")
 	}
 }
@@ -311,7 +417,7 @@ func (n *Node) sendPeerList(conn net.Conn) {
 	}
 
 	msg := Message{Type: MessageTypePeerList, Data: string(peerList), Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	if err := n.net.SendMessage(conn, msg); err != nil {
+	if err := n.net.SendMessage(conn, msg, n.compressMessage); err != nil {
 		n.logger.WithError(err).Error("Error sending peer list")
 	}
 }
@@ -322,51 +428,10 @@ func (n *Node) send(message string) {
 	conns := n.net.GetConns()
 	for _, conn := range conns {
 		go func(c net.Conn) {
-			if err := n.net.SendMessage(c, msg); err != nil {
+			if err := n.net.SendMessage(c, msg, n.compressMessage); err != nil {
 				n.logger.WithError(err).Error("Error sending message")
 				n.net.removeConn(c)
 			}
 		}(conn)
 	}
-}
-
-// startDiscovery periodically broadcasts the peer list to all connected peers.
-func (n *Node) startDiscovery() {
-	for {
-		time.Sleep(10 * time.Second)
-		conns := n.net.GetConns()
-		for _, conn := range conns {
-			n.sendPeerList(conn)
-		}
-	}
-}
-
-// startHeartbeat periodically sends ping messages to all connected peers.
-func (n *Node) startHeartbeat() {
-	for {
-		time.Sleep(5 * time.Second)
-		conns := n.net.GetConns()
-		for _, conn := range conns {
-			go func(c net.Conn) {
-				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-				if err := n.net.SendMessage(c, msg); err != nil {
-					n.logger.WithError(err).Error("Heartbeat failed")
-					n.net.removeConn(c)
-					n.peers.RemovePeer(c.RemoteAddr().String())
-				}
-			}(conn)
-		}
-	}
-}
-
-// generateTraceID generates a unique trace ID.
-func generateTraceID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
-}
-
-// handleMessageWithPool uses a Goroutine pool to handle messages.
-func (n *Node) handleMessageWithPool(conn net.Conn, msg Message) {
-	_ = n.pool.Submit(func() {
-		n.router.RouteMessage(n, conn, msg)
-	})
 }

@@ -83,7 +83,7 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 			n.logger.WithFields(logrus.Fields{
 				"reply": dialogue,
 			}).Info("Sending reply")
-			n.net.SendMessage(conn, Message{Type: MessageTypeChat, Data: dialogue, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()})
+			n.net.SendMessage(conn, Message{Type: MessageTypeChat, Data: dialogue, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}, n.compressMessage) // 传递 compressFunc
 		}
 	}()
 }
@@ -94,7 +94,7 @@ type PingHandler struct{}
 func (h *PingHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	n.logger.Debugf("Received ping from: %s", conn.RemoteAddr().String())
 	// 回复 Pong 消息
-	n.net.SendMessage(conn, Message{Type: MessageTypePong, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()})
+	n.net.SendMessage(conn, Message{Type: MessageTypePong, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}, n.compressMessage) // 传递 compressFunc
 }
 
 // PongHandler handles "pong" messages.
@@ -147,7 +147,7 @@ func (h *NodeStatusHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 		Sender:  n.Name,
 		Address: ":" + n.Port,
 		ID:      generateMessageID(),
-	})
+	}, n.compressMessage) // 传递 compressFunc
 }
 
 // shouldReplyToMessage decides whether to reply to a message.

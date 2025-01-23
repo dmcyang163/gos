@@ -11,6 +11,13 @@ type NetworkManager struct {
 	Conns sync.Map // 使用 sync.Map 替代 map
 }
 
+// NewNetworkManager creates a new NetworkManager instance.
+func NewNetworkManager() *NetworkManager {
+	return &NetworkManager{
+		Conns: sync.Map{},
+	}
+}
+
 // addConn adds a connection to the network.
 func (nm *NetworkManager) addConn(conn net.Conn) {
 	nm.Conns.Store(conn.RemoteAddr().String(), conn)
@@ -22,8 +29,8 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 }
 
 // SendMessage sends a message to a connection.
-func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
-	msgBytes, err := compressMessage(msg)
+func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message, compressFunc func(Message) ([]byte, error)) error {
+	msgBytes, err := compressFunc(msg)
 	if err != nil {
 		return err
 	}
