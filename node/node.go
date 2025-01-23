@@ -1,4 +1,3 @@
-// node.go
 package main
 
 import (
@@ -12,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings" // 添加 strings 包
 	"sync"
 	"time"
 
@@ -20,27 +20,22 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// 全局名字列表
-var names []NameEntry
-
 // Node represents a peer in the P2P network.
 type Node struct {
-	Port           string
-	logger         *logrus.Logger
-	config         *Config
-	Name           string
-	Description    string
-	SpecialAbility string
-	Tone           string
-	Dialogues      []string
-	processedMsgs  sync.Map
-
-	net    *NetworkManager
-	peers  *PeerManager
-	router *MessageRouter
-	pool   *ants.Pool // Goroutine 池
-
-	// 使用 sync.Pool 复用压缩和解压缩的缓冲区
+	Port             string
+	logger           *logrus.Logger
+	config           *Config
+	Name             string
+	Description      string
+	SpecialAbility   string
+	Tone             string
+	Dialogues        []string
+	processedMsgs    sync.Map
+	names            []NameEntry // 将 names 作为 Node 的字段
+	net              *NetworkManager
+	peers            *PeerManager
+	router           *MessageRouter
+	pool             *ants.Pool
 	compressorPool   *sync.Pool
 	decompressorPool *sync.Pool
 }
@@ -127,6 +122,7 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		Tone:             entry.Tone,
 		Dialogues:        entry.Dialogues,
 		processedMsgs:    sync.Map{},
+		names:            names, // 初始化 names
 		net:              NewNetworkManager(),
 		peers:            &PeerManager{},
 		router:           router,
@@ -134,6 +130,18 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		compressorPool:   compressorPool,
 		decompressorPool: decompressorPool,
 	}
+}
+
+// findDialogueForSender finds a dialogue for the sender based on their name.
+func (n *Node) findDialogueForSender(sender string) string {
+	for _, entry := range n.names {
+		if strings.Contains(sender, entry.Name) {
+			if len(entry.Dialogues) > 0 {
+				return entry.Dialogues[rand.Intn(len(entry.Dialogues))]
+			}
+		}
+	}
+	return "你好，我是" + sender + "。"
 }
 
 // SetLogLevel dynamically sets the log level.
@@ -251,27 +259,60 @@ func (n *Node) handleConnection(conn net.Conn) {
 func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 	reader := bufio.NewReader(conn)
 
+	// 记录 traceID（调试用）
+	n.logger.WithField("trace_id", traceID).Debug("Reading message")
+
 	// 读取消息长度
 	lengthBytes := make([]byte, 4)
 	_, err := io.ReadFull(reader, lengthBytes)
 	if err != nil {
+		n.logger.WithFields(logrus.Fields{
+			"trace_id": traceID,
+			"error":    err,
+		}).Error("Error reading message length")
 		return Message{}, fmt.Errorf("error reading message length: %w", err)
 	}
 
 	length := binary.BigEndian.Uint32(lengthBytes)
 
+	// 记录消息长度（调试用）
+	n.logger.WithFields(logrus.Fields{
+		"trace_id": traceID,
+		"length":   length,
+	}).Debug("Message length read")
+
 	// 读取消息体
 	msgBytes := make([]byte, length)
 	_, err = io.ReadFull(reader, msgBytes)
 	if err != nil {
+		n.logger.WithFields(logrus.Fields{
+			"trace_id": traceID,
+			"error":    err,
+		}).Error("Error reading message body")
 		return Message{}, fmt.Errorf("error reading message body: %w", err)
 	}
+
+	// 记录消息体大小（调试用）
+	n.logger.WithFields(logrus.Fields{
+		"trace_id": traceID,
+		"size":     len(msgBytes),
+	}).Debug("Message body read")
 
 	// 解压消息
 	msg, err := decompressMessage(msgBytes)
 	if err != nil {
+		n.logger.WithFields(logrus.Fields{
+			"trace_id": traceID,
+			"error":    err,
+		}).Error("Error decompressing message")
 		return Message{}, fmt.Errorf("error decompressing message: %w", err)
 	}
+
+	// 记录解压后的消息内容（调试用）
+	n.logger.WithFields(logrus.Fields{
+		"trace_id": traceID,
+		"message":  msg,
+	}).Debug("Message decompressed")
 
 	return msg, nil
 }

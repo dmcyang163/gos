@@ -4,7 +4,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net"
 	"strings"
 	"time"
@@ -46,7 +45,7 @@ func (h *PeerListHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 
 		if _, loaded := n.peers.KnownPeers.LoadOrStore(peer, PeerInfo{Address: peer, LastSeen: time.Now()}); !loaded {
 			n.logger.Infof("Discovered new peer: %s", peer)
-			go n.connectToPeer(peer) // 这里修复了语法错误
+			go n.connectToPeer(peer)
 		}
 	}
 }
@@ -80,7 +79,7 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 		color.Cyan("%s: %s\n", msg.Sender, msg.Data)
 
 		if shouldReplyToMessage(msg) {
-			dialogue := findDialogueForSender(msg.Sender)
+			dialogue := n.findDialogueForSender(msg.Sender)
 			n.logger.WithFields(logrus.Fields{
 				"reply": dialogue,
 			}).Info("Sending reply")
@@ -155,18 +154,6 @@ func (h *NodeStatusHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 func shouldReplyToMessage(msg Message) bool {
 	// 只有在消息包含 "hello" 时才回复
 	return strings.Contains(msg.Data, "hello")
-}
-
-// findDialogueForSender finds a dialogue for the sender based on their name.
-func findDialogueForSender(sender string) string {
-	for _, entry := range names {
-		if strings.Contains(sender, entry.Name) {
-			if len(entry.Dialogues) > 0 {
-				return entry.Dialogues[rand.Intn(len(entry.Dialogues))]
-			}
-		}
-	}
-	return "你好，我是" + sender + "。"
 }
 
 // generateMessageID generates a unique message ID.
