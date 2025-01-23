@@ -6,17 +6,15 @@ import (
 	"math/rand"
 	"os"
 	"time"
-)
 
-// 全局名字列表
-var names []NameEntry
+	"github.com/fatih/color"
+)
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	// 加载名字列表
-	var err error
-	names, err = LoadNames("names.json")
+	names, err := LoadNames("names.json")
 	if err != nil {
 		fmt.Printf("Error loading names: %v\n", err)
 		return
@@ -38,6 +36,9 @@ func main() {
 	// 创建节点
 	node := NewNode(config, names)
 
+	// 启动日志级别 API
+	node.startLogLevelAPI("8080")
+
 	// 启动服务器和其他协程
 	go node.startServer()
 	go node.startDiscovery()
@@ -52,6 +53,7 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		message := scanner.Text()
+		color.Green("You: %s\n", message) // 彩色显示用户输入
 		node.send(message)
 	}
 }

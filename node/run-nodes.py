@@ -3,6 +3,10 @@ import subprocess
 import time
 import os
 import sys
+from colorama import Fore, Style, init
+
+# 初始化 colorama
+init(autoreset=True)
 
 def load_config(config_file):
     """
@@ -24,7 +28,9 @@ def start_node(node_config):
     :return: (进程对象, 临时配置文件路径)
     """
     node_id = node_config.get("id", "unknown")
-    print(f"Starting node {node_id} with config: {node_config}")
+    print(f"{Fore.GREEN}Starting node {node_id} with config:{Style.RESET_ALL}")
+    # 使用 json.dumps 将 JSON 显示为美化格式
+    print(json.dumps(node_config, indent=4))
 
     # 将节点配置写入临时文件
     temp_config_file = f"temp_config_{node_id}.json"
@@ -32,7 +38,7 @@ def start_node(node_config):
         with open(temp_config_file, "w") as f:
             json.dump(node_config, f)
     except Exception as e:
-        print(f"Error writing temporary config file: {e}")
+        print(f"{Fore.RED}Error writing temporary config file: {e}{Style.RESET_ALL}")
         return None, None
 
     # 启动节点
@@ -46,7 +52,7 @@ def start_node(node_config):
             command = f'gnome-terminal -- bash -c "go run . {temp_config_file}; exec bash"'
             process = subprocess.Popen(command, shell=True)
     except Exception as e:
-        print(f"Error starting node {node_id}: {e}")
+        print(f"{Fore.RED}Error starting node {node_id}: {e}{Style.RESET_ALL}")
         return None, None
 
     # 启动节点后延迟 1 秒
@@ -57,7 +63,7 @@ def start_node(node_config):
 def main():
     # 检查命令行参数
     if len(sys.argv) < 2:
-        print("Usage: python run-nodes.py <config_file>")
+        print(f"{Fore.RED}Usage: python run-nodes.py <config_file>{Style.RESET_ALL}")
         sys.exit(1)
 
     # 加载配置文件
@@ -67,7 +73,7 @@ def main():
     # 读取节点配置
     nodes = config.get("nodes", [])
     if not nodes:
-        print("No nodes found in config.json")
+        print(f"{Fore.RED}No nodes found in config.json{Style.RESET_ALL}")
         sys.exit(1)
 
     processes = []
@@ -81,25 +87,25 @@ def main():
                 temp_files.append(temp_file)
 
         # 等待所有节点运行
-        print("All nodes started. Press Ctrl+C to stop.")
+        print(f"{Fore.GREEN}All nodes started. Press Ctrl+C to stop.{Style.RESET_ALL}")
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nStopping all nodes...")
+        print(f"\n{Fore.YELLOW}Stopping all nodes...{Style.RESET_ALL}")
         for process in processes:
             try:
                 process.terminate()
             except Exception as e:
-                print(f"Error stopping process: {e}")
-        print("All nodes stopped.")
+                print(f"{Fore.RED}Error stopping process: {e}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}All nodes stopped.{Style.RESET_ALL}")
     finally:
         # 清理临时配置文件
         for temp_file in temp_files:
             try:
                 os.remove(temp_file)
-                print(f"Removed temporary config file: {temp_file}")
+                print(f"{Fore.BLUE}Removed temporary config file: {temp_file}{Style.RESET_ALL}")
             except Exception as e:
-                print(f"Error removing temporary config file {temp_file}: {e}")
+                print(f"{Fore.RED}Error removing temporary config file {temp_file}: {e}{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()

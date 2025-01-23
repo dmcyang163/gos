@@ -13,13 +13,6 @@
             "bootstrap_node": "localhost:1234",
             "max_conns": 100,
             "log_level": "info"
-        },
-        {
-            "id": "node_c",
-            "port": "1236",
-            "bootstrap_node": "localhost:1234",
-            "max_conns": 100,
-            "log_level": "info"
         }
     ]
 }
