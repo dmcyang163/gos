@@ -10,11 +10,17 @@ import (
 	"github.com/fatih/color"
 )
 
+// 定义常量用于配置文件和名称文件路径
+const (
+	namesFile = "names.json"
+)
+
 func main() {
+	// 初始化随机数种子
 	rand.Seed(time.Now().UnixNano())
 
 	// 加载名字列表
-	names, err := LoadNames("names.json")
+	names, err := LoadNames(namesFile)
 	if err != nil {
 		fmt.Printf("Error loading names: %v\n", err)
 		return
