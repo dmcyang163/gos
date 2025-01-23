@@ -22,8 +22,6 @@ var names []NameEntry
 // Node represents a peer in the P2P network.
 type Node struct {
 	Port           string
-	Net            *NetworkManager
-	Peers          *PeerManager
 	logger         *logrus.Logger
 	config         *Config
 	Name           string
@@ -32,6 +30,10 @@ type Node struct {
 	Tone           string
 	Dialogues      []string
 	processedMsgs  sync.Map // 用于存储已处理的消息ID
+
+	// 依赖注入
+	net   *NetworkManager // 管理网络连接
+	peers *PeerManager    // 管理已知节点
 }
 
 // NewNode creates a new Node instance.
@@ -62,8 +64,6 @@ func NewNode(config *Config, names []NameEntry) *Node {
 	name := fmt.Sprintf("%s·%s", entry.Name, config.Port)
 	return &Node{
 		Port:           config.Port,
-		Net:            &NetworkManager{Conns: make(map[string]net.Conn)},
-		Peers:          &PeerManager{},
 		logger:         logger,
 		config:         config,
 		Name:           name,
@@ -72,6 +72,8 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		Tone:           entry.Tone,
 		Dialogues:      entry.Dialogues,
 		processedMsgs:  sync.Map{},
+		net:            &NetworkManager{Conns: make(map[string]net.Conn)},
+		peers:          &PeerManager{},
 	}
 }
 
@@ -99,7 +101,7 @@ func (n *Node) startServer() {
 		remoteAddr := conn.RemoteAddr().String()
 		n.logger.Infof("New connection from: %s", remoteAddr)
 
-		n.Net.addConn(conn)
+		n.net.addConn(conn)
 		go n.handleConnection(conn)
 	}
 }
@@ -108,8 +110,8 @@ func (n *Node) startServer() {
 func (n *Node) handleConnection(conn net.Conn) {
 	defer func() {
 		conn.Close()
-		n.Net.removeConn(conn)
-		n.Peers.KnownPeers.Delete(conn.RemoteAddr().String())
+		n.net.removeConn(conn)
+		n.peers.RemovePeer(conn.RemoteAddr().String())
 		n.logger.Infof("Connection closed: %s", conn.RemoteAddr().String())
 	}()
 
@@ -166,11 +168,11 @@ func (n *Node) handleConnection(conn net.Conn) {
 			// 只有在特定条件下才生成回复消息
 			if shouldReplyToMessage(msg) {
 				dialogue := findDialogueForSender(msg.Sender)
-				n.sendMessage(conn, Message{Type: "chat", Data: dialogue, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()})
+				n.net.SendMessage(conn, Message{Type: "chat", Data: dialogue, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()})
 			}
 		case "ping":
 			n.logger.Debugf("Received ping from: %s", conn.RemoteAddr().String())
-			n.sendMessage(conn, Message{Type: "pong", Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()})
+			n.net.SendMessage(conn, Message{Type: "pong", Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()})
 		case "pong":
 			n.logger.Debugf("Received pong from: %s", conn.RemoteAddr().String())
 		default:
@@ -199,7 +201,7 @@ func (n *Node) handlePeerMessage(message string) {
 			continue // Skip self
 		}
 
-		if _, loaded := n.Peers.KnownPeers.LoadOrStore(peer, struct{}{}); !loaded {
+		if _, loaded := n.peers.KnownPeers.LoadOrStore(peer, struct{}{}); !loaded {
 			n.logger.Infof("Discovered new peer: %s", peer)
 			go n.connectToPeer(peer)
 		}
@@ -213,7 +215,7 @@ func (n *Node) connectToPeer(peerAddr string) {
 		return
 	}
 
-	if _, loaded := n.Peers.KnownPeers.Load(peerAddr); loaded {
+	if _, loaded := n.peers.KnownPeers.Load(peerAddr); loaded {
 		n.logger.Debugf("Already connected to peer: %s", peerAddr)
 		return
 	}
@@ -225,8 +227,8 @@ func (n *Node) connectToPeer(peerAddr string) {
 		return
 	}
 
-	n.Net.addConn(conn)
-	n.Peers.KnownPeers.Store(peerAddr, struct{}{})
+	n.net.addConn(conn)
+	n.peers.AddPeer(peerAddr)
 	n.logger.Infof("Successfully connected to peer: %s", peerAddr)
 
 	// Request peer list from the connected peer
@@ -238,21 +240,14 @@ func (n *Node) connectToPeer(peerAddr string) {
 // requestPeerList requests the peer list from a connection.
 func (n *Node) requestPeerList(conn net.Conn) {
 	msg := Message{Type: "peer_list_request", Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	if err := n.sendMessage(conn, msg); err != nil {
+	if err := n.net.SendMessage(conn, msg); err != nil {
 		n.logger.WithError(err).Error("Error requesting peer list")
 	}
 }
 
 // sendPeerList sends the current peer list to a connection.
 func (n *Node) sendPeerList(conn net.Conn) {
-	peers := make([]string, 0)
-	n.Peers.KnownPeers.Range(func(k, _ interface{}) bool {
-		if k.(string) != ":"+n.Port && k.(string) != conn.RemoteAddr().String() {
-			peers = append(peers, k.(string))
-		}
-		return true
-	})
-
+	peers := n.peers.GetPeers()
 	if len(peers) == 0 {
 		n.logger.Debugf("No peers to send to %s", conn.RemoteAddr().String())
 		return
@@ -265,39 +260,20 @@ func (n *Node) sendPeerList(conn net.Conn) {
 	}
 
 	msg := Message{Type: "peer_list", Data: string(peerList), Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	if err := n.sendMessage(conn, msg); err != nil {
+	if err := n.net.SendMessage(conn, msg); err != nil {
 		n.logger.WithError(err).Error("Error sending peer list")
 	}
-}
-
-// sendMessage sends a message to a connection.
-func (n *Node) sendMessage(conn net.Conn, msg Message) error {
-	msgBytes, err := compressMessage(msg)
-	if err != nil {
-		return err
-	}
-
-	// 添加 4 字节的长度字段
-	length := uint32(len(msgBytes))
-	lengthBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBytes, length)
-
-	// 发送长度字段 + 消息体
-	_, err = conn.Write(append(lengthBytes, msgBytes...))
-	return err
 }
 
 // send broadcasts a message to all connected peers.
 func (n *Node) send(message string) {
 	msg := Message{Type: "chat", Data: message, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	n.Net.mu.Lock()
-	defer n.Net.mu.Unlock()
-
-	for _, conn := range n.Net.Conns {
+	conns := n.net.GetConns()
+	for _, conn := range conns {
 		go func(c net.Conn) {
-			if err := n.sendMessage(c, msg); err != nil {
+			if err := n.net.SendMessage(c, msg); err != nil {
 				n.logger.WithError(err).Error("Error sending message")
-				n.Net.removeConn(c)
+				n.net.removeConn(c)
 			}
 		}(conn)
 	}
@@ -307,14 +283,8 @@ func (n *Node) send(message string) {
 func (n *Node) startDiscovery() {
 	for {
 		time.Sleep(10 * time.Second)
-		n.Net.mu.Lock()
-		connList := make([]net.Conn, 0, len(n.Net.Conns))
-		for _, conn := range n.Net.Conns {
-			connList = append(connList, conn)
-		}
-		n.Net.mu.Unlock()
-
-		for _, conn := range connList {
+		conns := n.net.GetConns()
+		for _, conn := range conns {
 			n.sendPeerList(conn)
 		}
 	}
@@ -324,18 +294,17 @@ func (n *Node) startDiscovery() {
 func (n *Node) startHeartbeat() {
 	for {
 		time.Sleep(5 * time.Second)
-		n.Net.mu.Lock()
-		for addr, conn := range n.Net.Conns {
-			go func(c net.Conn, a string) {
+		conns := n.net.GetConns()
+		for _, conn := range conns {
+			go func(c net.Conn) {
 				msg := Message{Type: "ping", Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-				if err := n.sendMessage(c, msg); err != nil {
-					n.logger.WithError(err).Errorf("Heartbeat failed for %s", a)
-					n.Net.removeConn(c)
-					n.Peers.KnownPeers.Delete(a)
+				if err := n.net.SendMessage(c, msg); err != nil {
+					n.logger.WithError(err).Error("Heartbeat failed")
+					n.net.removeConn(c)
+					n.peers.RemovePeer(c.RemoteAddr().String())
 				}
-			}(conn, addr)
+			}(conn)
 		}
-		n.Net.mu.Unlock()
 	}
 }
 

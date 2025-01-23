@@ -18,3 +18,13 @@ func (pm *PeerManager) AddPeer(peer string) {
 func (pm *PeerManager) RemovePeer(peer string) {
 	pm.KnownPeers.Delete(peer)
 }
+
+// GetPeers returns a list of known peers.
+func (pm *PeerManager) GetPeers() []string {
+	peers := make([]string, 0)
+	pm.KnownPeers.Range(func(k, _ interface{}) bool {
+		peers = append(peers, k.(string))
+		return true
+	})
+	return peers
+}
