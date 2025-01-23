@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/panjf2000/ants/v2"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -35,6 +36,7 @@ type Node struct {
 	net    *NetworkManager
 	peers  *PeerManager
 	router *MessageRouter
+	pool   *ants.Pool // Goroutine 池
 }
 
 // NewNode creates a new Node instance.
@@ -44,7 +46,7 @@ func NewNode(config *Config, names []NameEntry) *Node {
 	// 配置日志轮转
 	logger.SetOutput(&lumberjack.Logger{
 		Filename:   "node.log", // 日志文件路径
-		MaxSize:    20,         // 每个日志文件的最大大小（MB）
+		MaxSize:    100,        // 每个日志文件的最大大小（MB）
 		MaxBackups: 3,          // 保留的旧日志文件数量
 		MaxAge:     28,         // 保留日志的最大天数
 		Compress:   true,       // 是否压缩旧日志
@@ -91,6 +93,12 @@ func NewNode(config *Config, names []NameEntry) *Node {
 	router.RegisterHandler(MessageTypeFileTransfer, &FileTransferHandler{}) // 注册文件传输处理器
 	router.RegisterHandler(MessageTypeNodeStatus, &NodeStatusHandler{})     // 注册节点状态处理器
 
+	// 初始化 Goroutine 池
+	pool, err := ants.NewPool(100) // 创建 Goroutine 池，最大并发数为 100
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to create Goroutine pool")
+	}
+
 	return &Node{
 		Port:           config.Port,
 		logger:         logger,
@@ -104,6 +112,7 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		net:            &NetworkManager{Conns: sync.Map{}},
 		peers:          &PeerManager{},
 		router:         router,
+		pool:           pool, // 将 Goroutine 池添加到 Node 结构体中
 	}
 }
 
@@ -213,7 +222,8 @@ func (n *Node) handleConnection(conn net.Conn) {
 			continue
 		}
 
-		n.router.RouteMessage(n, conn, msg)
+		// 使用 Goroutine 池处理消息
+		n.handleMessageWithPool(conn, msg)
 	}
 }
 
@@ -332,10 +342,9 @@ func (n *Node) startDiscovery() {
 }
 
 // startHeartbeat periodically sends ping messages to all connected peers.
-// startHeartbeat periodically sends ping messages to all connected peers.
 func (n *Node) startHeartbeat() {
 	for {
-		time.Sleep(5 * time.Second) // 每 5 秒发送一次心跳
+		time.Sleep(5 * time.Second)
 		conns := n.net.GetConns()
 		for _, conn := range conns {
 			go func(c net.Conn) {
@@ -347,13 +356,17 @@ func (n *Node) startHeartbeat() {
 				}
 			}(conn)
 		}
-
-		// 检查节点健康状态
-		n.peers.CheckPeerHealth(10 * time.Second) // 超时时间为 10 秒
 	}
 }
 
 // generateTraceID generates a unique trace ID.
 func generateTraceID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// handleMessageWithPool uses a Goroutine pool to handle messages.
+func (n *Node) handleMessageWithPool(conn net.Conn, msg Message) {
+	_ = n.pool.Submit(func() {
+		n.router.RouteMessage(n, conn, msg)
+	})
 }

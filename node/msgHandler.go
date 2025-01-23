@@ -62,28 +62,30 @@ func (h *PeerListRequestHandler) HandleMessage(n *Node, conn net.Conn, msg Messa
 type ChatHandler struct{}
 
 func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
-	if msg.Sender == n.Name && msg.Address == ":"+n.Port {
-		n.logger.Debugf("Ignoring message from self: %s", msg.Sender)
-		return
-	}
+	go func() {
+		if msg.Sender == n.Name && msg.Address == ":"+n.Port {
+			n.logger.Debugf("Ignoring message from self: %s", msg.Sender)
+			return
+		}
 
-	// 记录收到的聊天消息
-	n.logger.WithFields(logrus.Fields{
-		"sender":  msg.Sender,
-		"address": msg.Address,
-		"message": msg.Data,
-	}).Info("Received chat message")
-
-	// 彩色显示接收到的消息
-	color.Cyan("%s: %s\n", msg.Sender, msg.Data)
-
-	if shouldReplyToMessage(msg) {
-		dialogue := findDialogueForSender(msg.Sender)
+		// 记录收到的聊天消息
 		n.logger.WithFields(logrus.Fields{
-			"reply": dialogue,
-		}).Info("Sending reply")
-		n.net.SendMessage(conn, Message{Type: MessageTypeChat, Data: dialogue, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()})
-	}
+			"sender":  msg.Sender,
+			"address": msg.Address,
+			"message": msg.Data,
+		}).Info("Received chat message")
+
+		// 彩色显示接收到的消息
+		color.Cyan("%s: %s\n", msg.Sender, msg.Data)
+
+		if shouldReplyToMessage(msg) {
+			dialogue := findDialogueForSender(msg.Sender)
+			n.logger.WithFields(logrus.Fields{
+				"reply": dialogue,
+			}).Info("Sending reply")
+			n.net.SendMessage(conn, Message{Type: MessageTypeChat, Data: dialogue, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()})
+		}
+	}()
 }
 
 // PingHandler handles "ping" messages.
