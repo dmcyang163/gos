@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -18,31 +17,22 @@ import (
 
 // Node represents a peer in the P2P network.
 type Node struct {
-	Port             string
-	logger           *logrus.Logger
-	config           *Config
-	Name             string
-	Description      string
-	SpecialAbility   string
-	Tone             string
-	Dialogues        []string
-	processedMsgs    sync.Map
-	namesMap         map[string]NameEntry
-	net              *NetworkManager
-	peers            *PeerManager
-	router           *MessageRouter
-	pool             *ants.Pool
-	compressorPool   *sync.Pool
-	decompressorPool *sync.Pool
-}
-
-// newBufferPool 创建一个新的 sync.Pool，用于复用 bytes.Buffer
-func newBufferPool() *sync.Pool {
-	return &sync.Pool{
-		New: func() interface{} {
-			return bytes.NewBuffer(nil)
-		},
-	}
+	Port           string
+	logger         *logrus.Logger
+	config         *Config
+	Name           string
+	Description    string
+	SpecialAbility string
+	Tone           string
+	Dialogues      []string
+	processedMsgs  sync.Map
+	namesMap       map[string]NameEntry
+	net            *NetworkManager
+	peers          *PeerManager
+	router         *MessageRouter
+	pool           *ants.Pool
+	readBufferPool *sync.Pool // 用于读取消息的缓冲池
+	sendBufferPool *sync.Pool // 用于发送消息的缓冲池
 }
 
 // NewNode creates a new Node instance.
@@ -68,27 +58,27 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		logger.WithError(err).Fatal("Failed to create Goroutine pool")
 	}
 
-	// 初始化 sync.Pool 用于复用缓冲区
-	compressorPool := newBufferPool()
-	decompressorPool := newBufferPool()
+	// 初始化读取和发送消息的缓冲池
+	readBufferPool := newBufferPool()
+	sendBufferPool := newBufferPool()
 
 	return &Node{
-		Port:             config.Port,
-		logger:           logger,
-		config:           config,
-		Name:             name,
-		Description:      entry.Description,
-		SpecialAbility:   entry.SpecialAbility,
-		Tone:             entry.Tone,
-		Dialogues:        entry.Dialogues,
-		processedMsgs:    sync.Map{},
-		namesMap:         namesMap,
-		net:              NewNetworkManager(),
-		peers:            &PeerManager{},
-		router:           router,
-		pool:             pool,
-		compressorPool:   compressorPool,
-		decompressorPool: decompressorPool,
+		Port:           config.Port,
+		logger:         logger,
+		config:         config,
+		Name:           name,
+		Description:    entry.Description,
+		SpecialAbility: entry.SpecialAbility,
+		Tone:           entry.Tone,
+		Dialogues:      entry.Dialogues,
+		processedMsgs:  sync.Map{},
+		namesMap:       namesMap,
+		net:            NewNetworkManager(),
+		peers:          &PeerManager{},
+		router:         router,
+		pool:           pool,
+		readBufferPool: readBufferPool, // 初始化 readBufferPool
+		sendBufferPool: sendBufferPool, // 初始化 sendBufferPool
 	}
 }
 
@@ -198,9 +188,12 @@ func (n *Node) closeConnection(conn net.Conn, traceID string) {
 func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 	reader := bufio.NewReader(conn)
 
+	// 从 readBufferPool 中获取缓冲区
+	lengthBytes := n.readBufferPool.Get().([]byte)
+	defer n.readBufferPool.Put(lengthBytes) // 使用完毕后放回池中
+
 	// 读取消息长度
-	lengthBytes := make([]byte, 4)
-	_, err := io.ReadFull(reader, lengthBytes)
+	_, err := io.ReadFull(reader, lengthBytes[:4]) // 只读取前 4 个字节
 	if err != nil {
 		n.logger.WithFields(logrus.Fields{
 			"trace_id": traceID,
@@ -209,10 +202,20 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 		return Message{}, fmt.Errorf("error reading message length: %w", err)
 	}
 
-	length := binary.BigEndian.Uint32(lengthBytes)
+	length := binary.BigEndian.Uint32(lengthBytes[:4])
+
+	// 从 readBufferPool 中获取缓冲区
+	msgBytes := n.readBufferPool.Get().([]byte)
+	defer n.readBufferPool.Put(msgBytes) // 使用完毕后放回池中
+
+	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
+	if int(length) > len(msgBytes) {
+		msgBytes = make([]byte, length) // 动态分配更大的缓冲区
+	} else {
+		msgBytes = msgBytes[:length] // 调整切片长度为消息长度
+	}
 
 	// 读取消息体
-	msgBytes := make([]byte, length)
 	_, err = io.ReadFull(reader, msgBytes)
 	if err != nil {
 		n.logger.WithFields(logrus.Fields{
@@ -222,7 +225,7 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 		return Message{}, fmt.Errorf("error reading message body: %w", err)
 	}
 
-	// 解压消息
+	// 使用 decompressMessage 解压消息
 	msg, err := decompressMessage(msgBytes)
 	if err != nil {
 		n.logger.WithFields(logrus.Fields{
@@ -281,9 +284,40 @@ func (n *Node) startHeartbeat() {
 
 // sendMessageToPeer 向指定连接发送消息
 func (n *Node) sendMessageToPeer(conn net.Conn, msg Message) {
-	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
-		n.logger.WithError(err).Error("Error sending message")
-		n.net.removeConn(conn)
+	// 使用 compressMessage 压缩消息
+	msgBytes, err := compressMessage(msg)
+	if err != nil {
+		n.logger.WithError(err).Error("Error compressing message")
+		return
+	}
+
+	// 从 sendBufferPool 中获取缓冲区
+	buffer := n.sendBufferPool.Get().([]byte)
+	defer n.sendBufferPool.Put(buffer) // 使用完毕后放回池中
+
+	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
+	if len(msgBytes) > len(buffer) {
+		buffer = make([]byte, len(msgBytes)) // 动态分配更大的缓冲区
+	} else {
+		buffer = buffer[:len(msgBytes)] // 调整切片长度为消息长度
+	}
+
+	// 将消息内容复制到缓冲区
+	copy(buffer, msgBytes)
+
+	// 发送消息长度
+	length := uint32(len(buffer))
+	lengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBytes, length)
+	if _, err := conn.Write(lengthBytes); err != nil {
+		n.logger.WithError(err).Error("Error sending message length")
+		return
+	}
+
+	// 发送消息体
+	if _, err := conn.Write(buffer); err != nil {
+		n.logger.WithError(err).Error("Error sending message body")
+		return
 	}
 }
 
