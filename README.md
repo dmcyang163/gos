@@ -128,7 +128,7 @@ p2p-chat-node/
 欢迎提交 Issue 和 Pull Request！如果有问题或建议，请联系：dmc_yang@163.com
 
 #### 许可证
-本项目基于 MIT 许可证开源。详情请参阅 [LICENSE](LICENSE) 文件。
+本项目基于 Apache 许可证开源。详情请参阅 [LICENSE](LICENSE) 文件。
 
 ---
 
