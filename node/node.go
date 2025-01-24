@@ -189,8 +189,9 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 	reader := bufio.NewReader(conn)
 
 	// 从 readBufferPool 中获取缓冲区
-	lengthBytes := n.readBufferPool.Get().([]byte)
-	defer n.readBufferPool.Put(lengthBytes) // 使用完毕后放回池中
+	lengthBytesPtr := n.readBufferPool.Get().(*[]byte) // 获取切片的指针
+	defer n.readBufferPool.Put(lengthBytesPtr)         // 使用完毕后放回池中
+	lengthBytes := *lengthBytesPtr                     // 解引用指针
 
 	// 读取消息长度
 	_, err := io.ReadFull(reader, lengthBytes[:4]) // 只读取前 4 个字节
@@ -205,8 +206,9 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 	length := binary.BigEndian.Uint32(lengthBytes[:4])
 
 	// 从 readBufferPool 中获取缓冲区
-	msgBytes := n.readBufferPool.Get().([]byte)
-	defer n.readBufferPool.Put(msgBytes) // 使用完毕后放回池中
+	msgBytesPtr := n.readBufferPool.Get().(*[]byte) // 获取切片的指针
+	defer n.readBufferPool.Put(msgBytesPtr)         // 使用完毕后放回池中
+	msgBytes := *msgBytesPtr                        // 解引用指针
 
 	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
 	if int(length) > len(msgBytes) {
@@ -272,7 +274,7 @@ func (n *Node) startHeartbeat() {
 		for _, conn := range conns {
 			go func(c net.Conn) {
 				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-				if err := n.net.SendMessage(c, msg, compressMessage); err != nil {
+				if err := n.net.SendMessage(c, msg); err != nil {
 					n.logger.WithError(err).Error("Heartbeat failed")
 					n.net.removeConn(c)
 					n.peers.RemovePeer(c.RemoteAddr().String())
@@ -284,7 +286,7 @@ func (n *Node) startHeartbeat() {
 
 // sendMessageToPeer 向指定连接发送消息
 func (n *Node) sendMessageToPeer(conn net.Conn, msg Message) {
-	// 使用 compressMessage 压缩消息
+	// 直接调用 compressMessage
 	msgBytes, err := compressMessage(msg)
 	if err != nil {
 		n.logger.WithError(err).Error("Error compressing message")
@@ -292,14 +294,15 @@ func (n *Node) sendMessageToPeer(conn net.Conn, msg Message) {
 	}
 
 	// 从 sendBufferPool 中获取缓冲区
-	buffer := n.sendBufferPool.Get().([]byte)
-	defer n.sendBufferPool.Put(buffer) // 使用完毕后放回池中
+	bufferPtr := n.sendBufferPool.Get().(*[]byte)
+	defer n.sendBufferPool.Put(bufferPtr)
+	buffer := *bufferPtr
 
 	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
 	if len(msgBytes) > len(buffer) {
-		buffer = make([]byte, len(msgBytes)) // 动态分配更大的缓冲区
+		buffer = make([]byte, len(msgBytes))
 	} else {
-		buffer = buffer[:len(msgBytes)] // 调整切片长度为消息长度
+		buffer = buffer[:len(msgBytes)]
 	}
 
 	// 将消息内容复制到缓冲区

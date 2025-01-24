@@ -30,8 +30,9 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 }
 
 // SendMessage sends a message to a connection.
-func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message, compressFunc func(Message) ([]byte, error)) error {
-	msgBytes, err := compressFunc(msg)
+func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
+	// 直接调用 compressMessage
+	msgBytes, err := compressMessage(msg)
 	if err != nil {
 		return err
 	}

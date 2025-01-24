@@ -24,8 +24,9 @@ func compressMessage(msg Message) ([]byte, error) {
 	}
 
 	// 从 compressorPool 中获取缓冲区
-	buffer := compressorPool.Get().([]byte)
-	defer compressorPool.Put(buffer) // 使用完毕后放回池中
+	bufferPtr := compressorPool.Get().(*[]byte) // 获取切片的指针
+	defer compressorPool.Put(bufferPtr)         // 使用完毕后放回池中
+	buffer := *bufferPtr                        // 解引用指针
 
 	// 使用 Snappy 压缩数据
 	compressed := snappy.Encode(buffer, data)
@@ -35,8 +36,9 @@ func compressMessage(msg Message) ([]byte, error) {
 // decompressMessage decompresses a message using Snappy.
 func decompressMessage(data []byte) (Message, error) {
 	// 从 decompressorPool 中获取缓冲区
-	buffer := decompressorPool.Get().([]byte)
-	defer decompressorPool.Put(buffer) // 使用完毕后放回池中
+	bufferPtr := decompressorPool.Get().(*[]byte) // 获取切片的指针
+	defer decompressorPool.Put(bufferPtr)         // 使用完毕后放回池中
+	buffer := *bufferPtr                          // 解引用指针
 
 	// 使用 Snappy 解压缩数据
 	decoded, err := snappy.Decode(buffer, data)
@@ -53,11 +55,12 @@ func decompressMessage(data []byte) (Message, error) {
 	return msg, nil
 }
 
-// newBufferPool 创建一个新的 sync.Pool，用于复用 []byte
+// newBufferPool 创建一个新的 sync.Pool，用于复用 []byte 的指针
 func newBufferPool() *sync.Pool {
 	return &sync.Pool{
 		New: func() interface{} {
-			return make([]byte, 4096) // 返回的是 []byte
+			buf := make([]byte, 4096) // 初始缓冲区大小为 4096 字节
+			return &buf               // 返回切片的指针
 		},
 	}
 }

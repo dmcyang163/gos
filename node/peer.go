@@ -104,7 +104,7 @@ func (n *Node) establishPeerConnection(peerAddr string) (net.Conn, error) {
 // requestPeerList requests the peer list from a connection.
 func (n *Node) requestPeerList(conn net.Conn) {
 	msg := Message{Type: MessageTypePeerListReq, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
+	if err := n.net.SendMessage(conn, msg); err != nil {
 		n.logger.WithError(err).Error("Error requesting peer list")
 	}
 }
@@ -144,7 +144,7 @@ func (n *Node) sendPeerList(conn net.Conn) error {
 		ID:      generateMessageID(),
 	}
 
-	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
+	if err := n.net.SendMessage(conn, msg); err != nil {
 		n.logger.WithError(err).Error("Error sending peer list")
 		return err
 	}
