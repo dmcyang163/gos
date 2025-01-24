@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/panjf2000/ants/v2"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,11 +27,11 @@ type Node struct {
 	net            *NetworkManager
 	peers          *PeerManager
 	router         *MessageRouter
-	pool           *ants.Pool
+	executor       TaskExecutor // 使用 TaskExecutor 接口
 }
 
 // NewNode creates a new Node instance.
-func NewNode(config *Config, names []NameEntry) *Node {
+func NewNode(config *Config, names []NameEntry, executor TaskExecutor) *Node {
 	logger := setupLogger(config)
 
 	// 随机选择一个名字
@@ -48,12 +47,6 @@ func NewNode(config *Config, names []NameEntry) *Node {
 	// 初始化消息路由器
 	router := NewMessageRouter()
 
-	// 初始化 Goroutine 池
-	pool, err := ants.NewPool(100)
-	if err != nil {
-		logger.WithError(err).Fatal("Failed to create Goroutine pool")
-	}
-
 	return &Node{
 		Port:           config.Port,
 		logger:         logger,
@@ -68,7 +61,7 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		net:            NewNetworkManager(),
 		peers:          &PeerManager{},
 		router:         router,
-		pool:           pool,
+		executor:       executor, // 通过依赖注入
 	}
 }
 
@@ -120,7 +113,12 @@ func (n *Node) startServer() {
 		}).Info("New connection")
 
 		n.net.addConn(conn)
-		go n.handleConnection(conn)
+		err = n.executor.Submit(func() {
+			n.handleConnection(conn)
+		})
+		if err != nil {
+			n.logger.WithError(err).Error("Failed to submit connection handling task to executor")
+		}
 	}
 }
 
@@ -152,7 +150,7 @@ func (n *Node) handleConnection(conn net.Conn) {
 		}
 
 		// 使用 Goroutine 池处理消息
-		n.handleMessageWithPool(conn, msg)
+		n.handleMessageWithExecutor(conn, msg)
 	}
 }
 
@@ -167,13 +165,13 @@ func (n *Node) closeConnection(conn net.Conn, traceID string) {
 	}).Info("Connection closed")
 }
 
-// handleMessageWithPool uses a Goroutine pool to handle messages.
-func (n *Node) handleMessageWithPool(conn net.Conn, msg Message) {
-	err := n.pool.Submit(func() {
+// handleMessageWithExecutor uses a Goroutine pool to handle messages.
+func (n *Node) handleMessageWithExecutor(conn net.Conn, msg Message) {
+	err := n.executor.Submit(func() {
 		n.router.RouteMessage(n, conn, msg)
 	})
 	if err != nil {
-		n.logger.WithError(err).Error("Failed to submit task to pool")
+		n.logger.WithError(err).Error("Failed to submit task to executor")
 	}
 }
 
@@ -188,7 +186,12 @@ func (n *Node) startDiscovery() {
 		time.Sleep(time.Duration(n.config.DiscoveryInterval) * time.Second)
 		conns := n.net.GetConns()
 		for _, conn := range conns {
-			n.sendPeerList(conn)
+			err := n.executor.Submit(func() {
+				n.sendPeerList(conn)
+			})
+			if err != nil {
+				n.logger.WithError(err).Error("Failed to submit discovery task to executor")
+			}
 		}
 	}
 }
@@ -199,14 +202,17 @@ func (n *Node) startHeartbeat() {
 		time.Sleep(time.Duration(n.config.HeartbeatInterval) * time.Second)
 		conns := n.net.GetConns()
 		for _, conn := range conns {
-			go func(c net.Conn) {
+			err := n.executor.Submit(func() {
 				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-				if err := n.net.SendMessage(c, msg); err != nil {
+				if err := n.net.SendMessage(conn, msg); err != nil {
 					n.logger.WithError(err).Error("Heartbeat failed")
-					n.net.removeConn(c)
-					n.peers.RemovePeer(c.RemoteAddr().String())
+					n.net.removeConn(conn)
+					n.peers.RemovePeer(conn.RemoteAddr().String())
 				}
-			}(conn)
+			})
+			if err != nil {
+				n.logger.WithError(err).Error("Failed to submit heartbeat task to executor")
+			}
 		}
 	}
 }
@@ -223,10 +229,13 @@ func (n *Node) BroadcastMessage(message string) {
 
 	conns := n.net.GetConns()
 	for _, conn := range conns {
-		_ = n.pool.Submit(func() {
+		err := n.executor.Submit(func() {
 			if err := n.net.SendMessage(conn, msg); err != nil {
 				n.logger.WithError(err).Error("Error sending message")
 			}
 		})
+		if err != nil {
+			n.logger.WithError(err).Error("Failed to submit broadcast task to executor")
+		}
 	}
 }

@@ -84,7 +84,12 @@ func (n *Node) connectToPeer(peerAddr string) {
 	// 请求 Peer 列表
 	n.requestPeerList(conn)
 
-	go n.handleConnection(conn)
+	err = n.executor.Submit(func() {
+		n.handleConnection(conn)
+	})
+	if err != nil {
+		n.logger.WithError(err).Error("Failed to submit connection handling task to executor")
+	}
 }
 
 // establishPeerConnection 尝试与指定 Peer 建立连接

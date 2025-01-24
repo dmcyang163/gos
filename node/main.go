@@ -1,3 +1,4 @@
+// main.go
 package main
 
 import (
@@ -39,11 +40,19 @@ func main() {
 		return
 	}
 
-	// 创建节点
-	node := NewNode(config, names)
+	// 初始化 Goroutine 池
+	executor, err := NewAntsExecutor(100)
+	if err != nil {
+		fmt.Printf("Error creating executor: %v\n", err)
+		return
+	}
+	defer executor.Release()
+
+	// 创建节点并注入 executor
+	node := NewNode(config, names, executor)
 
 	// 启动日志级别 API
-	StartLogLevelAPI(node.logger, node.config.LogAPI) // 使用 logger.go 中的函数
+	StartLogLevelAPI(node.logger, node.config.LogAPI)
 
 	// 启动服务器和其他协程
 	go node.startServer()
@@ -59,7 +68,7 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		message := scanner.Text()
-		color.Green("You: %s\n", message) // 彩色显示用户输入
+		color.Green("You: %s\n", message)
 		node.BroadcastMessage(message)
 	}
 }
