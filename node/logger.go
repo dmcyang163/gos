@@ -1,3 +1,4 @@
+// logger.go
 package main
 
 import (
@@ -9,8 +10,27 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// setupLogger 初始化日志配置
-func setupLogger(config *Config) *logrus.Logger {
+// Logger 是日志模块的接口
+type Logger interface {
+	Debugf(format string, args ...interface{})
+	Debug(args ...interface{}) // 新增 Debug 方法
+	Infof(format string, args ...interface{})
+	Info(args ...interface{})
+	Warnf(format string, args ...interface{})
+	Warn(args ...interface{})
+	Errorf(format string, args ...interface{})
+	Error(args ...interface{})
+	WithFields(fields map[string]interface{}) Logger
+	WithError(err error) Logger
+}
+
+// LogrusLogger 是 logrus.Logger 的封装，实现 Logger 接口
+type LogrusLogger struct {
+	logger *logrus.Logger
+}
+
+// NewLogrusLogger 创建一个新的 LogrusLogger
+func NewLogrusLogger(config *Config) Logger {
 	logger := logrus.New()
 
 	// 配置日志轮转
@@ -49,28 +69,66 @@ func setupLogger(config *Config) *logrus.Logger {
 		logger.SetLevel(logrus.InfoLevel)
 	}
 
-	return logger
+	return &LogrusLogger{logger: logger}
+}
+
+func (l *LogrusLogger) Debugf(format string, args ...interface{}) {
+	l.logger.Debugf(format, args...)
+}
+
+func (l *LogrusLogger) Debug(args ...interface{}) {
+	l.logger.Debug(args...)
+}
+
+func (l *LogrusLogger) Infof(format string, args ...interface{}) {
+	l.logger.Infof(format, args...)
+}
+
+func (l *LogrusLogger) Info(args ...interface{}) {
+	l.logger.Info(args...)
+}
+
+func (l *LogrusLogger) Warnf(format string, args ...interface{}) {
+	l.logger.Warnf(format, args...)
+}
+func (l *LogrusLogger) Warn(args ...interface{}) {
+	l.logger.Warn(args...)
+}
+func (l *LogrusLogger) Errorf(format string, args ...interface{}) {
+	l.logger.Errorf(format, args...)
+}
+
+func (l *LogrusLogger) Error(args ...interface{}) {
+	l.logger.Error(args...)
+}
+
+func (l *LogrusLogger) WithFields(fields map[string]interface{}) Logger {
+	return &LogrusLogger{logger: l.logger.WithFields(fields).Logger}
+}
+
+func (l *LogrusLogger) WithError(err error) Logger {
+	return &LogrusLogger{logger: l.logger.WithError(err).Logger}
 }
 
 // SetLogLevel dynamically sets the log level.
-func SetLogLevel(logger *logrus.Logger, level string) {
+func SetLogLevel(logger Logger, level string) {
 	switch level {
 	case "debug":
-		logger.SetLevel(logrus.DebugLevel)
+		logger.(*LogrusLogger).logger.SetLevel(logrus.DebugLevel)
 	case "info":
-		logger.SetLevel(logrus.InfoLevel)
+		logger.(*LogrusLogger).logger.SetLevel(logrus.InfoLevel)
 	case "warn":
-		logger.SetLevel(logrus.WarnLevel)
+		logger.(*LogrusLogger).logger.SetLevel(logrus.WarnLevel)
 	case "error":
-		logger.SetLevel(logrus.ErrorLevel)
+		logger.(*LogrusLogger).logger.SetLevel(logrus.ErrorLevel)
 	default:
-		logger.SetLevel(logrus.InfoLevel)
+		logger.(*LogrusLogger).logger.SetLevel(logrus.InfoLevel)
 	}
-	logger.WithField("level", level).Info("Log level changed")
+	logger.WithFields(map[string]interface{}{"level": level}).Info("Log level changed")
 }
 
 // StartLogLevelAPI starts an HTTP server to dynamically adjust the log level.
-func StartLogLevelAPI(logger *logrus.Logger, port string) {
+func StartLogLevelAPI(logger Logger, port string) {
 	http.HandleFunc("/loglevel", func(w http.ResponseWriter, r *http.Request) {
 		level := r.URL.Query().Get("level")
 		if level == "" {
@@ -82,5 +140,5 @@ func StartLogLevelAPI(logger *logrus.Logger, port string) {
 	})
 
 	go http.ListenAndServe(":"+port, nil)
-	logger.WithField("port", port).Info("Log level API started")
+	logger.WithFields(map[string]interface{}{"port": port}).Info("Log level API started")
 }

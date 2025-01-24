@@ -1,3 +1,4 @@
+// peer.go
 package main
 
 import (
@@ -5,8 +6,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 // PeerInfo 存储节点的信息和最后活跃时间
@@ -17,7 +16,18 @@ type PeerInfo struct {
 
 // PeerManager handles peer discovery and management.
 type PeerManager struct {
-	KnownPeers sync.Map // map[string]PeerInfo
+	KnownPeers sync.Map
+	logger     Logger
+	executor   TaskExecutor
+}
+
+// NewPeerManager 创建一个新的 PeerManager
+func NewPeerManager(logger Logger, executor TaskExecutor) *PeerManager {
+	return &PeerManager{
+		KnownPeers: sync.Map{},
+		logger:     logger,
+		executor:   executor,
+	}
 }
 
 // AddPeer adds a new peer to the known peers list.
@@ -88,7 +98,7 @@ func (n *Node) connectToPeer(peerAddr string) {
 		n.handleConnection(conn)
 	})
 	if err != nil {
-		n.logger.WithError(err).Error("Failed to submit connection handling task to executor")
+		n.logger.Errorf("Failed to submit connection handling task to executor: %v", err)
 	}
 }
 
@@ -97,10 +107,7 @@ func (n *Node) establishPeerConnection(peerAddr string) (net.Conn, error) {
 	n.logger.Infof("Attempting to connect to peer: %s", peerAddr)
 	conn, err := net.Dial("tcp", peerAddr)
 	if err != nil {
-		n.logger.WithFields(logrus.Fields{
-			"peer_addr": peerAddr,
-			"error":     err,
-		}).Error("Error connecting to peer")
+		n.logger.Errorf("Error connecting to peer: %v", err)
 		return nil, err
 	}
 	return conn, nil
@@ -110,7 +117,7 @@ func (n *Node) establishPeerConnection(peerAddr string) (net.Conn, error) {
 func (n *Node) requestPeerList(conn net.Conn) {
 	msg := Message{Type: MessageTypePeerListReq, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
 	if err := n.net.SendMessage(conn, msg); err != nil {
-		n.logger.WithError(err).Error("Error requesting peer list")
+		n.logger.Errorf("Error requesting peer list: %v", err)
 	}
 }
 
@@ -123,7 +130,7 @@ func (n *Node) encodePeerList() (string, error) {
 
 	peerList, err := json.Marshal(peers)
 	if err != nil {
-		n.logger.WithError(err).Error("Error encoding peer list")
+		n.logger.Errorf("Error encoding peer list: %v", err)
 		return "", err
 	}
 	return string(peerList), nil
@@ -150,7 +157,7 @@ func (n *Node) sendPeerList(conn net.Conn) error {
 	}
 
 	if err := n.net.SendMessage(conn, msg); err != nil {
-		n.logger.WithError(err).Error("Error sending peer list")
+		n.logger.Errorf("Error sending peer list: %v", err)
 		return err
 	}
 	return nil

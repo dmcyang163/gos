@@ -8,14 +8,12 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Node represents a peer in the P2P network.
 type Node struct {
 	Port           string
-	logger         *logrus.Logger
+	logger         Logger
 	config         *Config
 	Name           string
 	Description    string
@@ -27,13 +25,11 @@ type Node struct {
 	net            *NetworkManager
 	peers          *PeerManager
 	router         *MessageRouter
-	executor       TaskExecutor // 使用 TaskExecutor 接口
+	executor       TaskExecutor
 }
 
 // NewNode creates a new Node instance.
-func NewNode(config *Config, names []NameEntry, executor TaskExecutor) *Node {
-	logger := setupLogger(config)
-
+func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExecutor) *Node {
 	// 随机选择一个名字
 	entry := names[rand.Intn(len(names))]
 	name := fmt.Sprintf("%s·%s", entry.Name, config.Port)
@@ -45,7 +41,11 @@ func NewNode(config *Config, names []NameEntry, executor TaskExecutor) *Node {
 	}
 
 	// 初始化消息路由器
-	router := NewMessageRouter()
+	router := NewMessageRouter(logger, executor)
+
+	// 初始化 NetworkManager 和 PeerManager
+	netManager := NewNetworkManager(logger, executor)
+	peerManager := NewPeerManager(logger, executor)
 
 	return &Node{
 		Port:           config.Port,
@@ -58,10 +58,10 @@ func NewNode(config *Config, names []NameEntry, executor TaskExecutor) *Node {
 		Dialogues:      entry.Dialogues,
 		processedMsgs:  sync.Map{},
 		namesMap:       namesMap,
-		net:            NewNetworkManager(),
-		peers:          &PeerManager{},
+		net:            netManager,
+		peers:          peerManager,
 		router:         router,
-		executor:       executor, // 通过依赖注入
+		executor:       executor,
 	}
 }
 
@@ -81,7 +81,7 @@ func (n *Node) findDialogueForSender(sender string) string {
 func (n *Node) startServer() {
 	ln, err := net.Listen("tcp", ":"+n.Port)
 	if err != nil {
-		n.logger.WithFields(logrus.Fields{
+		n.logger.WithFields(map[string]interface{}{
 			"port":  n.Port,
 			"error": err,
 		}).Error("Error starting server")
@@ -89,7 +89,7 @@ func (n *Node) startServer() {
 	}
 	defer ln.Close()
 
-	n.logger.WithFields(logrus.Fields{
+	n.logger.WithFields(map[string]interface{}{
 		"port":            n.Port,
 		"name":            n.Name,
 		"description":     n.Description,
@@ -100,7 +100,7 @@ func (n *Node) startServer() {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			n.logger.WithFields(logrus.Fields{
+			n.logger.WithFields(map[string]interface{}{
 				"port":  n.Port,
 				"error": err,
 			}).Error("Error accepting connection")
@@ -108,7 +108,7 @@ func (n *Node) startServer() {
 		}
 
 		remoteAddr := conn.RemoteAddr().String()
-		n.logger.WithFields(logrus.Fields{
+		n.logger.WithFields(map[string]interface{}{
 			"remote_addr": remoteAddr,
 		}).Info("New connection")
 
@@ -117,7 +117,9 @@ func (n *Node) startServer() {
 			n.handleConnection(conn)
 		})
 		if err != nil {
-			n.logger.WithError(err).Error("Failed to submit connection handling task to executor")
+			n.logger.WithFields(map[string]interface{}{
+				"error": err,
+			}).Error("Failed to submit connection handling task to executor")
 		}
 	}
 }
@@ -125,15 +127,16 @@ func (n *Node) startServer() {
 // handleConnection handles incoming messages from a connection.
 func (n *Node) handleConnection(conn net.Conn) {
 	traceID := generateTraceID()
-	n.logger.WithField("trace_id", traceID).Info("Handling connection")
+	n.logger.WithFields(map[string]interface{}{
+		"trace_id": traceID,
+	}).Info("Handling connection")
 
 	defer n.closeConnection(conn, traceID)
 
 	for {
-		// 使用 NetworkManager 读取消息
 		msg, err := n.net.ReadMessage(conn)
 		if err != nil {
-			n.logger.WithFields(logrus.Fields{
+			n.logger.WithFields(map[string]interface{}{
 				"trace_id":    traceID,
 				"error":       err,
 				"remote_addr": conn.RemoteAddr().String(),
@@ -142,24 +145,23 @@ func (n *Node) handleConnection(conn net.Conn) {
 		}
 
 		if _, loaded := n.processedMsgs.LoadOrStore(msg.ID, struct{}{}); loaded {
-			n.logger.WithFields(logrus.Fields{
+			n.logger.WithFields(map[string]interface{}{
 				"trace_id":   traceID,
 				"message_id": msg.ID,
 			}).Debug("Message already processed")
 			continue
 		}
 
-		// 使用 Goroutine 池处理消息
 		n.handleMessageWithExecutor(conn, msg)
 	}
 }
 
-// closeConnection 关闭连接并清理资源
+// closeConnection closes the connection and cleans up resources.
 func (n *Node) closeConnection(conn net.Conn, traceID string) {
 	conn.Close()
 	n.net.removeConn(conn)
 	n.peers.RemovePeer(conn.RemoteAddr().String())
-	n.logger.WithFields(logrus.Fields{
+	n.logger.WithFields(map[string]interface{}{
 		"remote_addr": conn.RemoteAddr().String(),
 		"trace_id":    traceID,
 	}).Info("Connection closed")
@@ -171,7 +173,9 @@ func (n *Node) handleMessageWithExecutor(conn net.Conn, msg Message) {
 		n.router.RouteMessage(n, conn, msg)
 	})
 	if err != nil {
-		n.logger.WithError(err).Error("Failed to submit task to executor")
+		n.logger.WithFields(map[string]interface{}{
+			"error": err,
+		}).Error("Failed to submit task to executor")
 	}
 }
 
@@ -190,7 +194,9 @@ func (n *Node) startDiscovery() {
 				n.sendPeerList(conn)
 			})
 			if err != nil {
-				n.logger.WithError(err).Error("Failed to submit discovery task to executor")
+				n.logger.WithFields(map[string]interface{}{
+					"error": err,
+				}).Error("Failed to submit discovery task to executor")
 			}
 		}
 	}
@@ -205,13 +211,17 @@ func (n *Node) startHeartbeat() {
 			err := n.executor.Submit(func() {
 				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
 				if err := n.net.SendMessage(conn, msg); err != nil {
-					n.logger.WithError(err).Error("Heartbeat failed")
+					n.logger.WithFields(map[string]interface{}{
+						"error": err,
+					}).Error("Heartbeat failed")
 					n.net.removeConn(conn)
 					n.peers.RemovePeer(conn.RemoteAddr().String())
 				}
 			})
 			if err != nil {
-				n.logger.WithError(err).Error("Failed to submit heartbeat task to executor")
+				n.logger.WithFields(map[string]interface{}{
+					"error": err,
+				}).Error("Failed to submit heartbeat task to executor")
 			}
 		}
 	}
@@ -231,11 +241,15 @@ func (n *Node) BroadcastMessage(message string) {
 	for _, conn := range conns {
 		err := n.executor.Submit(func() {
 			if err := n.net.SendMessage(conn, msg); err != nil {
-				n.logger.WithError(err).Error("Error sending message")
+				n.logger.WithFields(map[string]interface{}{
+					"error": err,
+				}).Error("Error sending message")
 			}
 		})
 		if err != nil {
-			n.logger.WithError(err).Error("Failed to submit broadcast task to executor")
+			n.logger.WithFields(map[string]interface{}{
+				"error": err,
+			}).Error("Failed to submit broadcast task to executor")
 		}
 	}
 }

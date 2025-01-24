@@ -1,9 +1,7 @@
 // task_executor.go
 package main
 
-import (
-	"github.com/panjf2000/ants/v2"
-)
+import "github.com/panjf2000/ants/v2"
 
 // TaskFunc 是 Goroutine 池中执行的任务函数类型
 type TaskFunc func()

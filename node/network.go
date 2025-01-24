@@ -12,27 +12,21 @@ import (
 
 // NetworkManager handles network connections.
 type NetworkManager struct {
-	Conns          sync.Map   // 使用 sync.Map 替代 map
-	sendBufferPool *sync.Pool // 发送消息的缓冲池
-	readBufferPool *sync.Pool // 读取消息的缓冲池
+	Conns          sync.Map
+	sendBufferPool *sync.Pool
+	readBufferPool *sync.Pool
+	logger         Logger
+	executor       TaskExecutor
 }
 
 // NewNetworkManager creates a new NetworkManager instance.
-func NewNetworkManager() *NetworkManager {
+func NewNetworkManager(logger Logger, executor TaskExecutor) *NetworkManager {
 	return &NetworkManager{
-		Conns: sync.Map{},
-		sendBufferPool: &sync.Pool{
-			New: func() interface{} {
-				buf := make([]byte, 4096) // 初始缓冲区大小为 4096 字节
-				return &buf               // 返回切片的指针
-			},
-		},
-		readBufferPool: &sync.Pool{
-			New: func() interface{} {
-				buf := make([]byte, 4096) // 初始缓冲区大小为 4096 字节
-				return &buf               // 返回切片的指针
-			},
-		},
+		Conns:          sync.Map{},
+		sendBufferPool: newBufferPool(),
+		readBufferPool: newBufferPool(),
+		logger:         logger,
+		executor:       executor,
 	}
 }
 

@@ -1,3 +1,4 @@
+// config_loader.go
 package main
 
 import (
@@ -12,13 +13,13 @@ type Config struct {
 	BootstrapNode     string `json:"bootstrap_node"`
 	MaxConns          int    `json:"max_conns"`
 	LogLevel          string `json:"log_level"`
-	LogMaxSize        int    `json:"log_max_size"`       // 新增
-	LogMaxBackups     int    `json:"log_max_backups"`    // 新增
-	LogMaxAge         int    `json:"log_max_age"`        // 新增
-	LogCompress       bool   `json:"log_compress"`       // 新增
-	DiscoveryInterval int    `json:"discovery_interval"` // 新增
-	HeartbeatInterval int    `json:"heartbeat_interval"` // 新增
-	LogAPI            string `json:"log_api"`            // 新增
+	LogMaxSize        int    `json:"log_max_size"`
+	LogMaxBackups     int    `json:"log_max_backups"`
+	LogMaxAge         int    `json:"log_max_age"`
+	LogCompress       bool   `json:"log_compress"`
+	DiscoveryInterval int    `json:"discovery_interval"`
+	HeartbeatInterval int    `json:"heartbeat_interval"`
+	LogAPI            string `json:"log_api"`
 }
 
 // NameEntry represents a name with its description and dialogues.
@@ -28,6 +29,38 @@ type NameEntry struct {
 	SpecialAbility string   `json:"special_ability"`
 	Tone           string   `json:"tone"`
 	Dialogues      []string `json:"dialogues"`
+}
+
+// ConfigLoader 是配置文件加载器的接口
+type ConfigLoader interface {
+	LoadConfig(path string) (*Config, error)
+	LoadNames(path string) ([]NameEntry, error)
+}
+
+// JSONConfigLoader 是 JSON 配置文件加载器的实现
+type JSONConfigLoader struct{}
+
+// NewJSONConfigLoader 创建一个新的 JSONConfigLoader
+func NewJSONConfigLoader() *JSONConfigLoader {
+	return &JSONConfigLoader{}
+}
+
+// LoadConfig 加载配置文件
+func (l *JSONConfigLoader) LoadConfig(path string) (*Config, error) {
+	var config Config
+	if err := loadJSONFile(path, &config); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	return &config, nil
+}
+
+// LoadNames 加载名字列表
+func (l *JSONConfigLoader) LoadNames(path string) ([]NameEntry, error) {
+	var names []NameEntry
+	if err := loadJSONFile(path, &names); err != nil {
+		return nil, fmt.Errorf("failed to load names: %w", err)
+	}
+	return names, nil
 }
 
 // loadJSONFile 是一个通用函数，用于读取文件内容并解析 JSON 数据
@@ -41,22 +74,4 @@ func loadJSONFile(path string, v interface{}) error {
 		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
 	return nil
-}
-
-// LoadConfig loads the configuration from a file.
-func LoadConfig(path string) (*Config, error) {
-	var config Config
-	if err := loadJSONFile(path, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
-
-// LoadNames loads the names and descriptions from a file.
-func LoadNames(path string) ([]NameEntry, error) {
-	var names []NameEntry
-	if err := loadJSONFile(path, &names); err != nil {
-		return nil, err
-	}
-	return names, nil
 }
