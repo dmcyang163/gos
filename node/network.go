@@ -2,20 +2,37 @@
 package main
 
 import (
+	"bufio"
 	"encoding/binary"
+	"fmt"
+	"io"
 	"net"
 	"sync"
 )
 
 // NetworkManager handles network connections.
 type NetworkManager struct {
-	Conns sync.Map // 使用 sync.Map 替代 map
+	Conns          sync.Map   // 使用 sync.Map 替代 map
+	sendBufferPool *sync.Pool // 发送消息的缓冲池
+	readBufferPool *sync.Pool // 读取消息的缓冲池
 }
 
 // NewNetworkManager creates a new NetworkManager instance.
 func NewNetworkManager() *NetworkManager {
 	return &NetworkManager{
 		Conns: sync.Map{},
+		sendBufferPool: &sync.Pool{
+			New: func() interface{} {
+				buf := make([]byte, 4096) // 初始缓冲区大小为 4096 字节
+				return &buf               // 返回切片的指针
+			},
+		},
+		readBufferPool: &sync.Pool{
+			New: func() interface{} {
+				buf := make([]byte, 4096) // 初始缓冲区大小为 4096 字节
+				return &buf               // 返回切片的指针
+			},
+		},
 	}
 }
 
@@ -31,18 +48,81 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 
 // SendMessage sends a message to a connection.
 func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
-	// 直接调用 compressMessage
+	// 压缩消息
 	msgBytes, err := compressMessage(msg)
 	if err != nil {
 		return err
 	}
 
-	length := uint32(len(msgBytes))
+	// 从缓冲池中获取缓冲区
+	bufferPtr := nm.sendBufferPool.Get().(*[]byte)
+	defer nm.sendBufferPool.Put(bufferPtr)
+	buffer := *bufferPtr
+
+	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
+	if len(msgBytes) > len(buffer) {
+		buffer = make([]byte, len(msgBytes))
+	} else {
+		buffer = buffer[:len(msgBytes)]
+	}
+
+	// 将消息内容复制到缓冲区
+	copy(buffer, msgBytes)
+
+	// 发送消息长度
+	length := uint32(len(buffer))
 	lengthBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(lengthBytes, length)
+	if _, err := conn.Write(lengthBytes); err != nil {
+		return fmt.Errorf("error sending message length: %w", err)
+	}
 
-	_, err = conn.Write(append(lengthBytes, msgBytes...))
-	return err
+	// 发送消息体
+	if _, err := conn.Write(buffer); err != nil {
+		return fmt.Errorf("error sending message body: %w", err)
+	}
+
+	return nil
+}
+
+// ReadMessage reads a message from the connection.
+func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
+	reader := bufio.NewReader(conn)
+
+	// 从缓冲池中获取缓冲区
+	bufferPtr := nm.readBufferPool.Get().(*[]byte)
+	defer nm.readBufferPool.Put(bufferPtr)
+	buffer := *bufferPtr
+
+	// 读取消息长度
+	lengthBytes := buffer[:4]
+	_, err := io.ReadFull(reader, lengthBytes)
+	if err != nil {
+		return Message{}, fmt.Errorf("error reading message length: %w", err)
+	}
+
+	length := binary.BigEndian.Uint32(lengthBytes)
+
+	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
+	if int(length) > len(buffer) {
+		buffer = make([]byte, length)
+	} else {
+		buffer = buffer[:length]
+	}
+
+	// 读取消息体
+	_, err = io.ReadFull(reader, buffer)
+	if err != nil {
+		return Message{}, fmt.Errorf("error reading message body: %w", err)
+	}
+
+	// 解压消息
+	msg, err := decompressMessage(buffer)
+	if err != nil {
+		return Message{}, fmt.Errorf("error decompressing message: %w", err)
+	}
+
+	return msg, nil
 }
 
 // GetConns returns a list of active connections.

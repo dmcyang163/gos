@@ -60,6 +60,6 @@ func main() {
 	for scanner.Scan() {
 		message := scanner.Text()
 		color.Green("You: %s\n", message) // 彩色显示用户输入
-		node.send(message)
+		node.BroadcastMessage(message)
 	}
 }

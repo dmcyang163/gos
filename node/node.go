@@ -1,10 +1,8 @@
+// node.go
 package main
 
 import (
-	"bufio"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"math/rand"
 	"net"
 	"strings"
@@ -31,8 +29,6 @@ type Node struct {
 	peers          *PeerManager
 	router         *MessageRouter
 	pool           *ants.Pool
-	readBufferPool *sync.Pool // 用于读取消息的缓冲池
-	sendBufferPool *sync.Pool // 用于发送消息的缓冲池
 }
 
 // NewNode creates a new Node instance.
@@ -58,10 +54,6 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		logger.WithError(err).Fatal("Failed to create Goroutine pool")
 	}
 
-	// 初始化读取和发送消息的缓冲池
-	readBufferPool := newBufferPool()
-	sendBufferPool := newBufferPool()
-
 	return &Node{
 		Port:           config.Port,
 		logger:         logger,
@@ -77,8 +69,6 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		peers:          &PeerManager{},
 		router:         router,
 		pool:           pool,
-		readBufferPool: readBufferPool, // 初始化 readBufferPool
-		sendBufferPool: sendBufferPool, // 初始化 sendBufferPool
 	}
 }
 
@@ -142,35 +132,28 @@ func (n *Node) handleConnection(conn net.Conn) {
 	defer n.closeConnection(conn, traceID)
 
 	for {
-		if err := n.readAndProcessMessage(conn, traceID); err != nil {
+		// 使用 NetworkManager 读取消息
+		msg, err := n.net.ReadMessage(conn)
+		if err != nil {
+			n.logger.WithFields(logrus.Fields{
+				"trace_id":    traceID,
+				"error":       err,
+				"remote_addr": conn.RemoteAddr().String(),
+			}).Error("Error reading message, closing connection")
 			return
 		}
-	}
-}
 
-// readAndProcessMessage 从连接中读取并处理消息
-func (n *Node) readAndProcessMessage(conn net.Conn, traceID string) error {
-	msg, err := n.readMessage(conn, traceID)
-	if err != nil {
-		n.logger.WithFields(logrus.Fields{
-			"trace_id":    traceID,
-			"error":       err,
-			"remote_addr": conn.RemoteAddr().String(),
-		}).Error("Error reading message, closing connection")
-		return err
-	}
+		if _, loaded := n.processedMsgs.LoadOrStore(msg.ID, struct{}{}); loaded {
+			n.logger.WithFields(logrus.Fields{
+				"trace_id":   traceID,
+				"message_id": msg.ID,
+			}).Debug("Message already processed")
+			continue
+		}
 
-	if _, loaded := n.processedMsgs.LoadOrStore(msg.ID, struct{}{}); loaded {
-		n.logger.WithFields(logrus.Fields{
-			"trace_id":   traceID,
-			"message_id": msg.ID,
-		}).Debug("Message already processed")
-		return nil
+		// 使用 Goroutine 池处理消息
+		n.handleMessageWithPool(conn, msg)
 	}
-
-	// 使用 Goroutine 池处理消息
-	n.handleMessageWithPool(conn, msg)
-	return nil
 }
 
 // closeConnection 关闭连接并清理资源
@@ -182,62 +165,6 @@ func (n *Node) closeConnection(conn net.Conn, traceID string) {
 		"remote_addr": conn.RemoteAddr().String(),
 		"trace_id":    traceID,
 	}).Info("Connection closed")
-}
-
-// readMessage reads a message from the connection.
-func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
-	reader := bufio.NewReader(conn)
-
-	// 从 readBufferPool 中获取缓冲区
-	lengthBytesPtr := n.readBufferPool.Get().(*[]byte) // 获取切片的指针
-	defer n.readBufferPool.Put(lengthBytesPtr)         // 使用完毕后放回池中
-	lengthBytes := *lengthBytesPtr                     // 解引用指针
-
-	// 读取消息长度
-	_, err := io.ReadFull(reader, lengthBytes[:4]) // 只读取前 4 个字节
-	if err != nil {
-		n.logger.WithFields(logrus.Fields{
-			"trace_id": traceID,
-			"error":    err,
-		}).Error("Error reading message length")
-		return Message{}, fmt.Errorf("error reading message length: %w", err)
-	}
-
-	length := binary.BigEndian.Uint32(lengthBytes[:4])
-
-	// 从 readBufferPool 中获取缓冲区
-	msgBytesPtr := n.readBufferPool.Get().(*[]byte) // 获取切片的指针
-	defer n.readBufferPool.Put(msgBytesPtr)         // 使用完毕后放回池中
-	msgBytes := *msgBytesPtr                        // 解引用指针
-
-	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
-	if int(length) > len(msgBytes) {
-		msgBytes = make([]byte, length) // 动态分配更大的缓冲区
-	} else {
-		msgBytes = msgBytes[:length] // 调整切片长度为消息长度
-	}
-
-	// 读取消息体
-	_, err = io.ReadFull(reader, msgBytes)
-	if err != nil {
-		n.logger.WithFields(logrus.Fields{
-			"trace_id": traceID,
-			"error":    err,
-		}).Error("Error reading message body")
-		return Message{}, fmt.Errorf("error reading message body: %w", err)
-	}
-
-	// 使用 decompressMessage 解压消息
-	msg, err := decompressMessage(msgBytes)
-	if err != nil {
-		n.logger.WithFields(logrus.Fields{
-			"trace_id": traceID,
-			"error":    err,
-		}).Error("Error decompressing message")
-		return Message{}, fmt.Errorf("error decompressing message: %w", err)
-	}
-
-	return msg, nil
 }
 
 // handleMessageWithPool uses a Goroutine pool to handle messages.
@@ -284,48 +211,8 @@ func (n *Node) startHeartbeat() {
 	}
 }
 
-// sendMessageToPeer 向指定连接发送消息
-func (n *Node) sendMessageToPeer(conn net.Conn, msg Message) {
-	// 直接调用 compressMessage
-	msgBytes, err := compressMessage(msg)
-	if err != nil {
-		n.logger.WithError(err).Error("Error compressing message")
-		return
-	}
-
-	// 从 sendBufferPool 中获取缓冲区
-	bufferPtr := n.sendBufferPool.Get().(*[]byte)
-	defer n.sendBufferPool.Put(bufferPtr)
-	buffer := *bufferPtr
-
-	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
-	if len(msgBytes) > len(buffer) {
-		buffer = make([]byte, len(msgBytes))
-	} else {
-		buffer = buffer[:len(msgBytes)]
-	}
-
-	// 将消息内容复制到缓冲区
-	copy(buffer, msgBytes)
-
-	// 发送消息长度
-	length := uint32(len(buffer))
-	lengthBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBytes, length)
-	if _, err := conn.Write(lengthBytes); err != nil {
-		n.logger.WithError(err).Error("Error sending message length")
-		return
-	}
-
-	// 发送消息体
-	if _, err := conn.Write(buffer); err != nil {
-		n.logger.WithError(err).Error("Error sending message body")
-		return
-	}
-}
-
-// send broadcasts a message to all connected peers.
-func (n *Node) send(message string) {
+// BroadcastMessage broadcasts a message to all connected peers.
+func (n *Node) BroadcastMessage(message string) {
 	msg := Message{
 		Type:    MessageTypeChat,
 		Data:    message,
@@ -337,7 +224,9 @@ func (n *Node) send(message string) {
 	conns := n.net.GetConns()
 	for _, conn := range conns {
 		_ = n.pool.Submit(func() {
-			n.sendMessageToPeer(conn, msg)
+			if err := n.net.SendMessage(conn, msg); err != nil {
+				n.logger.WithError(err).Error("Error sending message")
+			}
 		})
 	}
 }
