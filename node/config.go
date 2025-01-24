@@ -8,10 +8,17 @@ import (
 
 // Config represents the configuration for the node.
 type Config struct {
-	Port          string `json:"port"`
-	BootstrapNode string `json:"bootstrap_node"`
-	MaxConns      int    `json:"max_conns"`
-	LogLevel      string `json:"log_level"`
+	Port              string `json:"port"`
+	BootstrapNode     string `json:"bootstrap_node"`
+	MaxConns          int    `json:"max_conns"`
+	LogLevel          string `json:"log_level"`
+	LogMaxSize        int    `json:"log_max_size"`       // 新增
+	LogMaxBackups     int    `json:"log_max_backups"`    // 新增
+	LogMaxAge         int    `json:"log_max_age"`        // 新增
+	LogCompress       bool   `json:"log_compress"`       // 新增
+	DiscoveryInterval int    `json:"discovery_interval"` // 新增
+	HeartbeatInterval int    `json:"heartbeat_interval"` // 新增
+	LogAPI            string `json:"log_api"`            // 新增
 }
 
 // NameEntry represents a name with its description and dialogues.

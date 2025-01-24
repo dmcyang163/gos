@@ -4,20 +4,16 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
-	"net/http"
-	"os"
-	"strings" // 添加 strings 包
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // Node represents a peer in the P2P network.
@@ -31,7 +27,7 @@ type Node struct {
 	Tone             string
 	Dialogues        []string
 	processedMsgs    sync.Map
-	names            []NameEntry // 将 names 作为 Node 的字段
+	namesMap         map[string]NameEntry
 	net              *NetworkManager
 	peers            *PeerManager
 	router           *MessageRouter
@@ -40,77 +36,41 @@ type Node struct {
 	decompressorPool *sync.Pool
 }
 
+// newBufferPool 创建一个新的 sync.Pool，用于复用 bytes.Buffer
+func newBufferPool() *sync.Pool {
+	return &sync.Pool{
+		New: func() interface{} {
+			return bytes.NewBuffer(nil)
+		},
+	}
+}
+
 // NewNode creates a new Node instance.
 func NewNode(config *Config, names []NameEntry) *Node {
-	logger := logrus.New()
-
-	// 配置日志轮转
-	logger.SetOutput(&lumberjack.Logger{
-		Filename:   "node.log", // 日志文件路径
-		MaxSize:    100,        // 每个日志文件的最大大小（MB）
-		MaxBackups: 3,          // 保留的旧日志文件数量
-		MaxAge:     28,         // 保留日志的最大天数
-		Compress:   true,       // 是否压缩旧日志
-	})
-
-	// 同时输出到控制台
-	logger.SetOutput(io.MultiWriter(os.Stdout, logger.Out))
-
-	// 设置日志格式为 JSON
-	logger.SetFormatter(&logrus.JSONFormatter{
-		TimestampFormat: "2006-01-02 15:04:05",
-		FieldMap: logrus.FieldMap{
-			logrus.FieldKeyTime:  "timestamp",
-			logrus.FieldKeyLevel: "level",
-			logrus.FieldKeyMsg:   "message",
-		},
-	})
-
-	// 设置日志级别
-	switch config.LogLevel {
-	case "debug":
-		logger.SetLevel(logrus.DebugLevel)
-	case "info":
-		logger.SetLevel(logrus.InfoLevel)
-	case "warn":
-		logger.SetLevel(logrus.WarnLevel)
-	case "error":
-		logger.SetLevel(logrus.ErrorLevel)
-	default:
-		logger.SetLevel(logrus.InfoLevel)
-	}
+	logger := setupLogger(config)
 
 	// 随机选择一个名字
 	entry := names[rand.Intn(len(names))]
 	name := fmt.Sprintf("%s·%s", entry.Name, config.Port)
 
+	// 初始化 namesMap
+	namesMap := make(map[string]NameEntry)
+	for _, entry := range names {
+		namesMap[entry.Name] = entry
+	}
+
 	// 初始化消息路由器
 	router := NewMessageRouter()
-	router.RegisterHandler(MessageTypePeerList, &PeerListHandler{})
-	router.RegisterHandler(MessageTypePeerListReq, &PeerListRequestHandler{})
-	router.RegisterHandler(MessageTypeChat, &ChatHandler{})
-	router.RegisterHandler(MessageTypePing, &PingHandler{})
-	router.RegisterHandler(MessageTypePong, &PongHandler{})
-	router.RegisterHandler(MessageTypeFileTransfer, &FileTransferHandler{})
-	router.RegisterHandler(MessageTypeNodeStatus, &NodeStatusHandler{})
 
 	// 初始化 Goroutine 池
-	pool, err := ants.NewPool(100) // 创建 Goroutine 池，最大并发数为 100
+	pool, err := ants.NewPool(100)
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to create Goroutine pool")
 	}
 
 	// 初始化 sync.Pool 用于复用缓冲区
-	compressorPool := &sync.Pool{
-		New: func() interface{} {
-			return new(bytes.Buffer) // 用于压缩的缓冲区
-		},
-	}
-	decompressorPool := &sync.Pool{
-		New: func() interface{} {
-			return new(bytes.Buffer) // 用于解压缩的缓冲区
-		},
-	}
+	compressorPool := newBufferPool()
+	decompressorPool := newBufferPool()
 
 	return &Node{
 		Port:             config.Port,
@@ -122,7 +82,7 @@ func NewNode(config *Config, names []NameEntry) *Node {
 		Tone:             entry.Tone,
 		Dialogues:        entry.Dialogues,
 		processedMsgs:    sync.Map{},
-		names:            names, // 初始化 names
+		namesMap:         namesMap,
 		net:              NewNetworkManager(),
 		peers:            &PeerManager{},
 		router:           router,
@@ -134,47 +94,14 @@ func NewNode(config *Config, names []NameEntry) *Node {
 
 // findDialogueForSender finds a dialogue for the sender based on their name.
 func (n *Node) findDialogueForSender(sender string) string {
-	for _, entry := range n.names {
-		if strings.Contains(sender, entry.Name) {
+	for name, entry := range n.namesMap {
+		if strings.Contains(sender, name) {
 			if len(entry.Dialogues) > 0 {
 				return entry.Dialogues[rand.Intn(len(entry.Dialogues))]
 			}
 		}
 	}
 	return "你好，我是" + sender + "。"
-}
-
-// SetLogLevel dynamically sets the log level.
-func (n *Node) SetLogLevel(level string) {
-	switch level {
-	case "debug":
-		n.logger.SetLevel(logrus.DebugLevel)
-	case "info":
-		n.logger.SetLevel(logrus.InfoLevel)
-	case "warn":
-		n.logger.SetLevel(logrus.WarnLevel)
-	case "error":
-		n.logger.SetLevel(logrus.ErrorLevel)
-	default:
-		n.logger.SetLevel(logrus.InfoLevel)
-	}
-	n.logger.WithField("level", level).Info("Log level changed")
-}
-
-// startLogLevelAPI starts an HTTP server to dynamically adjust the log level.
-func (n *Node) startLogLevelAPI(port string) {
-	http.HandleFunc("/loglevel", func(w http.ResponseWriter, r *http.Request) {
-		level := r.URL.Query().Get("level")
-		if level == "" {
-			http.Error(w, "Missing level parameter", http.StatusBadRequest)
-			return
-		}
-		n.SetLogLevel(level)
-		w.Write([]byte("Log level updated to " + level))
-	})
-
-	go http.ListenAndServe(":"+port, nil)
-	n.logger.WithField("port", port).Info("Log level API started")
 }
 
 // startServer starts the TCP server to listen for incoming connections.
@@ -222,45 +149,54 @@ func (n *Node) handleConnection(conn net.Conn) {
 	traceID := generateTraceID()
 	n.logger.WithField("trace_id", traceID).Info("Handling connection")
 
-	defer func() {
-		conn.Close()
-		n.net.removeConn(conn)
-		n.peers.RemovePeer(conn.RemoteAddr().String())
-		n.logger.WithFields(logrus.Fields{
-			"remote_addr": conn.RemoteAddr().String(),
-			"trace_id":    traceID,
-		}).Info("Connection closed")
-	}()
+	defer n.closeConnection(conn, traceID)
 
 	for {
-		msg, err := n.readMessage(conn, traceID)
-		if err != nil {
-			n.logger.WithFields(logrus.Fields{
-				"trace_id": traceID,
-				"error":    err,
-			}).Error("Error reading message")
+		if err := n.readAndProcessMessage(conn, traceID); err != nil {
 			return
 		}
-
-		if _, loaded := n.processedMsgs.LoadOrStore(msg.ID, struct{}{}); loaded {
-			n.logger.WithFields(logrus.Fields{
-				"trace_id":   traceID,
-				"message_id": msg.ID,
-			}).Debug("Message already processed")
-			continue
-		}
-
-		// 使用 Goroutine 池处理消息
-		n.handleMessageWithPool(conn, msg)
 	}
+}
+
+// readAndProcessMessage 从连接中读取并处理消息
+func (n *Node) readAndProcessMessage(conn net.Conn, traceID string) error {
+	msg, err := n.readMessage(conn, traceID)
+	if err != nil {
+		n.logger.WithFields(logrus.Fields{
+			"trace_id":    traceID,
+			"error":       err,
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Error("Error reading message, closing connection")
+		return err
+	}
+
+	if _, loaded := n.processedMsgs.LoadOrStore(msg.ID, struct{}{}); loaded {
+		n.logger.WithFields(logrus.Fields{
+			"trace_id":   traceID,
+			"message_id": msg.ID,
+		}).Debug("Message already processed")
+		return nil
+	}
+
+	// 使用 Goroutine 池处理消息
+	n.handleMessageWithPool(conn, msg)
+	return nil
+}
+
+// closeConnection 关闭连接并清理资源
+func (n *Node) closeConnection(conn net.Conn, traceID string) {
+	conn.Close()
+	n.net.removeConn(conn)
+	n.peers.RemovePeer(conn.RemoteAddr().String())
+	n.logger.WithFields(logrus.Fields{
+		"remote_addr": conn.RemoteAddr().String(),
+		"trace_id":    traceID,
+	}).Info("Connection closed")
 }
 
 // readMessage reads a message from the connection.
 func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 	reader := bufio.NewReader(conn)
-
-	// 记录 traceID（调试用）
-	n.logger.WithField("trace_id", traceID).Debug("Reading message")
 
 	// 读取消息长度
 	lengthBytes := make([]byte, 4)
@@ -275,12 +211,6 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 
 	length := binary.BigEndian.Uint32(lengthBytes)
 
-	// 记录消息长度（调试用）
-	n.logger.WithFields(logrus.Fields{
-		"trace_id": traceID,
-		"length":   length,
-	}).Debug("Message length read")
-
 	// 读取消息体
 	msgBytes := make([]byte, length)
 	_, err = io.ReadFull(reader, msgBytes)
@@ -292,12 +222,6 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 		return Message{}, fmt.Errorf("error reading message body: %w", err)
 	}
 
-	// 记录消息体大小（调试用）
-	n.logger.WithFields(logrus.Fields{
-		"trace_id": traceID,
-		"size":     len(msgBytes),
-	}).Debug("Message body read")
-
 	// 解压消息
 	msg, err := decompressMessage(msgBytes)
 	if err != nil {
@@ -308,20 +232,17 @@ func (n *Node) readMessage(conn net.Conn, traceID string) (Message, error) {
 		return Message{}, fmt.Errorf("error decompressing message: %w", err)
 	}
 
-	// 记录解压后的消息内容（调试用）
-	n.logger.WithFields(logrus.Fields{
-		"trace_id": traceID,
-		"message":  msg,
-	}).Debug("Message decompressed")
-
 	return msg, nil
 }
 
 // handleMessageWithPool uses a Goroutine pool to handle messages.
 func (n *Node) handleMessageWithPool(conn net.Conn, msg Message) {
-	_ = n.pool.Submit(func() {
+	err := n.pool.Submit(func() {
 		n.router.RouteMessage(n, conn, msg)
 	})
+	if err != nil {
+		n.logger.WithError(err).Error("Failed to submit task to pool")
+	}
 }
 
 // generateTraceID generates a unique trace ID.
@@ -332,7 +253,7 @@ func generateTraceID() string {
 // startDiscovery periodically broadcasts the peer list to all connected peers.
 func (n *Node) startDiscovery() {
 	for {
-		time.Sleep(10 * time.Second)
+		time.Sleep(time.Duration(n.config.DiscoveryInterval) * time.Second)
 		conns := n.net.GetConns()
 		for _, conn := range conns {
 			n.sendPeerList(conn)
@@ -343,7 +264,7 @@ func (n *Node) startDiscovery() {
 // startHeartbeat periodically sends ping messages to all connected peers.
 func (n *Node) startHeartbeat() {
 	for {
-		time.Sleep(5 * time.Second)
+		time.Sleep(time.Duration(n.config.HeartbeatInterval) * time.Second)
 		conns := n.net.GetConns()
 		for _, conn := range conns {
 			go func(c net.Conn) {
@@ -358,76 +279,28 @@ func (n *Node) startHeartbeat() {
 	}
 }
 
-// connectToPeer attempts to connect to a peer.
-func (n *Node) connectToPeer(peerAddr string) {
-	if peerAddr == ":"+n.Port {
-		n.logger.Debugf("Skipping connection to self: %s", peerAddr)
-		return
-	}
-
-	if _, loaded := n.peers.KnownPeers.Load(peerAddr); loaded {
-		n.logger.Debugf("Already connected to peer: %s", peerAddr)
-		return
-	}
-
-	n.logger.Infof("Attempting to connect to peer: %s", peerAddr)
-	conn, err := net.Dial("tcp", peerAddr)
-	if err != nil {
-		n.logger.WithFields(logrus.Fields{
-			"peer_addr": peerAddr,
-			"error":     err,
-		}).Error("Error connecting to peer")
-		return
-	}
-
-	n.net.addConn(conn)
-	n.peers.AddPeer(peerAddr)
-	n.logger.Infof("Successfully connected to peer: %s", peerAddr)
-
-	// Request peer list from the connected peer
-	n.requestPeerList(conn)
-
-	go n.handleConnection(conn)
-}
-
-// requestPeerList requests the peer list from a connection.
-func (n *Node) requestPeerList(conn net.Conn) {
-	msg := Message{Type: MessageTypePeerListReq, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
+// sendMessageToPeer 向指定连接发送消息
+func (n *Node) sendMessageToPeer(conn net.Conn, msg Message) {
 	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
-		n.logger.WithError(err).Error("Error requesting peer list")
-	}
-}
-
-// sendPeerList sends the current peer list to a connection.
-func (n *Node) sendPeerList(conn net.Conn) {
-	peers := n.peers.GetPeers()
-	if len(peers) == 0 {
-		n.logger.Debugf("No peers to send to %s", conn.RemoteAddr().String())
-		return
-	}
-
-	peerList, err := json.Marshal(peers)
-	if err != nil {
-		n.logger.WithError(err).Error("Error encoding peer list")
-		return
-	}
-
-	msg := Message{Type: MessageTypePeerList, Data: string(peerList), Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
-	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
-		n.logger.WithError(err).Error("Error sending peer list")
+		n.logger.WithError(err).Error("Error sending message")
+		n.net.removeConn(conn)
 	}
 }
 
 // send broadcasts a message to all connected peers.
 func (n *Node) send(message string) {
-	msg := Message{Type: MessageTypeChat, Data: message, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
+	msg := Message{
+		Type:    MessageTypeChat,
+		Data:    message,
+		Sender:  n.Name,
+		Address: ":" + n.Port,
+		ID:      generateMessageID(),
+	}
+
 	conns := n.net.GetConns()
 	for _, conn := range conns {
-		go func(c net.Conn) {
-			if err := n.net.SendMessage(c, msg, compressMessage); err != nil {
-				n.logger.WithError(err).Error("Error sending message")
-				n.net.removeConn(c)
-			}
-		}(conn)
+		_ = n.pool.Submit(func() {
+			n.sendMessageToPeer(conn, msg)
+		})
 	}
 }

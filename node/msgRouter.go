@@ -7,11 +7,22 @@ type MessageRouter struct {
 	handlers map[string]MessageHandler
 }
 
-// NewMessageRouter creates a new MessageRouter instance.
+// NewMessageRouter creates a new MessageRouter instance and registers all handlers.
 func NewMessageRouter() *MessageRouter {
-	return &MessageRouter{
+	router := &MessageRouter{
 		handlers: make(map[string]MessageHandler),
 	}
+
+	// 注册所有消息处理器
+	router.RegisterHandler(MessageTypePeerList, &PeerListHandler{})
+	router.RegisterHandler(MessageTypePeerListReq, &PeerListRequestHandler{})
+	router.RegisterHandler(MessageTypeChat, &ChatHandler{})
+	router.RegisterHandler(MessageTypePing, &PingHandler{})
+	router.RegisterHandler(MessageTypePong, &PongHandler{})
+	router.RegisterHandler(MessageTypeFileTransfer, &FileTransferHandler{})
+	router.RegisterHandler(MessageTypeNodeStatus, &NodeStatusHandler{})
+
+	return router
 }
 
 // RegisterHandler registers a handler for a specific message type.

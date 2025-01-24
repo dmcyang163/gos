@@ -5,14 +5,28 @@
             "port": "1234",
             "bootstrap_node": "",
             "max_conns": 100,
-            "log_level": "info"
+            "log_level": "info",
+            "log_max_size": 100,
+            "log_max_backups": 3,
+            "log_max_age": 28,
+            "log_compress": true,
+            "discovery_interval": 10,
+            "heartbeat_interval": 5,
+            "log_api": "8080"
         },
         {
             "id": "node_b",
             "port": "1235",
             "bootstrap_node": "localhost:1234",
             "max_conns": 100,
-            "log_level": "info"
+            "log_level": "info",
+            "log_max_size": 100,
+            "log_max_backups": 3,
+            "log_max_age": 28,
+            "log_compress": true,
+            "discovery_interval": 10,
+            "heartbeat_interval": 5,
+            "log_api": "8081"
         }
     ]
 }

@@ -43,7 +43,7 @@ func main() {
 	node := NewNode(config, names)
 
 	// 启动日志级别 API
-	node.startLogLevelAPI("8080")
+	StartLogLevelAPI(node.logger, node.config.LogAPI) // 使用 logger.go 中的函数
 
 	// 启动服务器和其他协程
 	go node.startServer()

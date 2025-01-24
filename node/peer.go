@@ -1,8 +1,12 @@
 package main
 
 import (
+	"encoding/json"
+	"net"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // PeerInfo 存储节点的信息和最后活跃时间
@@ -54,4 +58,95 @@ func (pm *PeerManager) CheckPeerHealth(timeout time.Duration) {
 		}
 		return true
 	})
+}
+
+// connectToPeer attempts to connect to a peer.
+func (n *Node) connectToPeer(peerAddr string) {
+	if peerAddr == ":"+n.Port {
+		n.logger.Debugf("Skipping connection to self: %s", peerAddr)
+		return
+	}
+
+	if _, loaded := n.peers.KnownPeers.Load(peerAddr); loaded {
+		n.logger.Debugf("Already connected to peer: %s", peerAddr)
+		return
+	}
+
+	conn, err := n.establishPeerConnection(peerAddr)
+	if err != nil {
+		return
+	}
+
+	n.net.addConn(conn)
+	n.peers.AddPeer(peerAddr)
+	n.logger.Infof("Successfully connected to peer: %s", peerAddr)
+
+	// 请求 Peer 列表
+	n.requestPeerList(conn)
+
+	go n.handleConnection(conn)
+}
+
+// establishPeerConnection 尝试与指定 Peer 建立连接
+func (n *Node) establishPeerConnection(peerAddr string) (net.Conn, error) {
+	n.logger.Infof("Attempting to connect to peer: %s", peerAddr)
+	conn, err := net.Dial("tcp", peerAddr)
+	if err != nil {
+		n.logger.WithFields(logrus.Fields{
+			"peer_addr": peerAddr,
+			"error":     err,
+		}).Error("Error connecting to peer")
+		return nil, err
+	}
+	return conn, nil
+}
+
+// requestPeerList requests the peer list from a connection.
+func (n *Node) requestPeerList(conn net.Conn) {
+	msg := Message{Type: MessageTypePeerListReq, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
+	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
+		n.logger.WithError(err).Error("Error requesting peer list")
+	}
+}
+
+// encodePeerList 将 Peer 列表编码为 JSON 字符串
+func (n *Node) encodePeerList() (string, error) {
+	peers := n.peers.GetPeers()
+	if len(peers) == 0 {
+		return "", nil
+	}
+
+	peerList, err := json.Marshal(peers)
+	if err != nil {
+		n.logger.WithError(err).Error("Error encoding peer list")
+		return "", err
+	}
+	return string(peerList), nil
+}
+
+// sendPeerList sends the current peer list to a connection.
+func (n *Node) sendPeerList(conn net.Conn) error {
+	peerList, err := n.encodePeerList()
+	if err != nil {
+		return err
+	}
+
+	if peerList == "" {
+		n.logger.Debugf("No peers to send to %s", conn.RemoteAddr().String())
+		return nil
+	}
+
+	msg := Message{
+		Type:    MessageTypePeerList,
+		Data:    peerList,
+		Sender:  n.Name,
+		Address: ":" + n.Port,
+		ID:      generateMessageID(),
+	}
+
+	if err := n.net.SendMessage(conn, msg, compressMessage); err != nil {
+		n.logger.WithError(err).Error("Error sending peer list")
+		return err
+	}
+	return nil
 }
