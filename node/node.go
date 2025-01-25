@@ -253,3 +253,14 @@ func (n *Node) BroadcastMessage(message string) {
 		}
 	}
 }
+
+// SendFile sends a file to a peer.
+func (n *Node) SendFile(peerAddr string, filePath string) error {
+	conn, err := net.Dial("tcp", peerAddr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to peer: %w", err)
+	}
+	defer conn.Close()
+
+	return n.net.SendFile(conn, filePath)
+}

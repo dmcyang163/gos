@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -14,11 +13,19 @@ import (
 )
 
 func main() {
+	// 启动 pprof 性能分析服务器
 	go func() {
 		http.ListenAndServe(":6060", nil)
 	}()
+
 	// 初始化随机数种子
 	rand.Seed(time.Now().UnixNano())
+
+	// 检查命令行参数
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run main.go <config_file> [sendfile <file_path> <peer_addr>]")
+		return
+	}
 
 	// 加载配置文件
 	configLoader := NewJSONConfigLoader()
@@ -60,6 +67,21 @@ func main() {
 	// 连接到引导节点
 	if config.BootstrapNode != "" {
 		node.connectToPeer(config.BootstrapNode)
+	}
+
+	// 检查是否需要发送文件
+	if len(os.Args) > 2 && os.Args[2] == "sendfile" {
+		if len(os.Args) < 5 {
+			fmt.Println("Usage: go run main.go <config_file> sendfile <file_path> <peer_addr>")
+			return
+		}
+
+		filePath := os.Args[3]
+		peerAddr := os.Args[4]
+		if err := node.SendFile(peerAddr, filePath); err != nil {
+			fmt.Printf("Error sending file: %v\n", err)
+		}
+		return
 	}
 
 	// 读取用户输入并发送消息

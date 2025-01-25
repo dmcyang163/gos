@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -106,15 +109,77 @@ func (h *PongHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	n.peers.UpdateLastSeen(conn.RemoteAddr().String(), time.Now())
 }
 
-// FileTransferHandler handles "file_transfer" messages.
-type FileTransferHandler struct{}
+type FileTransferHandler struct {
+	fileBuffers sync.Map // 用于存储文件块的缓冲区
+}
 
+// fileBuffer 用于存储文件块的缓冲区
 func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	n.logger.WithFields(logrus.Fields{
 		"sender":  msg.Sender,
 		"address": msg.Address,
-		"file":    msg.Data,
-	}).Info("Received file transfer request")
+		"file":    msg.FileName,
+		"chunk":   msg.ChunkID,
+	}).Info("Received file transfer chunk")
+
+	// 获取或创建文件缓冲区
+	buffer, _ := h.fileBuffers.LoadOrStore(msg.FileName, &fileBuffer{
+		chunks: make(map[int][]byte),
+		size:   msg.FileSize,
+	})
+	fb := buffer.(*fileBuffer)
+
+	// 存储当前块
+	fb.mu.Lock()
+	fb.chunks[msg.ChunkID] = msg.Chunk
+	fb.mu.Unlock()
+
+	// 如果是最后一块，则写入文件
+	if msg.IsLast {
+		go h.writeFile(n, msg.FileName, fb)
+		h.fileBuffers.Delete(msg.FileName)
+	}
+}
+
+// writeFile 将文件块写入磁盘
+func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer) {
+	// 确保 received_files 目录存在
+	os.MkdirAll("received_files", os.ModePerm)
+	n.logger.WithFields(map[string]interface{}{
+		"received_files": fileName,
+	}).Info("MkdirAll received_files")
+	// 构建文件路径
+	filePath := filepath.Join("received_files", fileName)
+
+	// 创建文件
+	file, err := os.Create(filePath)
+	if err != nil {
+		n.logger.WithError(err).Error("Failed to create file")
+		return
+	}
+	defer file.Close()
+
+	// 按顺序写入文件块
+	for i := 0; i < len(fb.chunks); i++ {
+		if chunk, ok := fb.chunks[i]; ok {
+			_, err := file.Write(chunk)
+			if err != nil {
+				n.logger.WithError(err).Error("Failed to write file chunk")
+				return
+			}
+		}
+	}
+
+	n.logger.WithFields(logrus.Fields{
+		"file": filePath,
+	}).Info("File transfer completed")
+}
+
+// fileBuffer 用于存储文件块的缓冲区
+type fileBuffer struct {
+	mu     sync.Mutex
+	chunks map[int][]byte // 文件块
+	size   int64          // 文件总大小
 }
 
 // NodeStatusHandler handles "node_status" messages.

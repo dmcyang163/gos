@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 )
 
@@ -38,6 +39,51 @@ func (nm *NetworkManager) addConn(conn net.Conn) {
 // removeConn removes a connection from the network.
 func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
+}
+
+// SendFile sends a file in chunks.
+func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	chunkSize := 1024 * 1024 // 1MB per chunk
+	buffer := make([]byte, chunkSize)
+	chunkID := 0
+
+	for {
+		n, err := file.Read(buffer)
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+		if n == 0 {
+			break
+		}
+
+		msg := Message{
+			Type:     MessageTypeFileTransfer,
+			FileName: fileInfo.Name(),
+			FileSize: fileInfo.Size(),
+			Chunk:    buffer[:n],
+			ChunkID:  chunkID,
+			IsLast:   err == io.EOF,
+		}
+
+		if err := nm.SendMessage(conn, msg); err != nil {
+			return fmt.Errorf("failed to send file chunk: %w", err)
+		}
+
+		chunkID++
+	}
+
+	return nil
 }
 
 // SendMessage sends a message to a connection.

@@ -74,6 +74,10 @@ func loadJSONFile(path string, v interface{}) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
+	// 打印文件内容
+	fmt.Println("Config file content:")
+	fmt.Println(string(data))
+
 	if err := json.Unmarshal(data, v); err != nil {
 		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
