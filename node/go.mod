@@ -3,6 +3,7 @@ module node
 go 1.23.5
 
 require (
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/golang/snappy v0.0.4
 	github.com/panjf2000/ants/v2 v2.11.0

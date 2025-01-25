@@ -5,6 +5,8 @@ import (
 	"bufio"
 	"fmt"
 	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -12,6 +14,9 @@ import (
 )
 
 func main() {
+	go func() {
+		http.ListenAndServe(":6060", nil)
+	}()
 	// 初始化随机数种子
 	rand.Seed(time.Now().UnixNano())
 
