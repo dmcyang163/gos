@@ -63,9 +63,6 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
-		if n == 0 {
-			break
-		}
 
 		msg := Message{
 			Type:     MessageTypeFileTransfer,
@@ -73,14 +70,21 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 			FileSize: fileInfo.Size(),
 			Chunk:    buffer[:n],
 			ChunkID:  chunkID,
-			IsLast:   err == io.EOF,
+			IsLast:   err == io.EOF, // 如果是文件末尾，设置 IsLast 为 true
 		}
-
+		// fmt.Printf("Sending file chunk: file=%s, chunk=%d, size=%d, is_last=%v\n", msg.FileName, msg.ChunkID, len(msg.Chunk), msg.IsLast)
 		if err := nm.SendMessage(conn, msg); err != nil {
 			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
 
 		chunkID++
+
+		// 如果是文件末尾，退出循环
+		if err == io.EOF {
+			fmt.Printf("send last chunk %d\n", chunkID)
+
+			break
+		}
 	}
 
 	return nil
@@ -127,6 +131,7 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 
 // ReadMessage reads a message from the connection.
 func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
+
 	reader := bufio.NewReader(conn)
 
 	// 从缓冲池中获取缓冲区

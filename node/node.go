@@ -144,6 +144,8 @@ func (n *Node) handleConnection(conn net.Conn) {
 			return
 		}
 
+		n.handleMessageWithExecutor(conn, msg)
+
 		if _, loaded := n.processedMsgs.LoadOrStore(msg.ID, struct{}{}); loaded {
 			n.logger.WithFields(map[string]interface{}{
 				"trace_id":   traceID,
@@ -152,7 +154,6 @@ func (n *Node) handleConnection(conn net.Conn) {
 			continue
 		}
 
-		n.handleMessageWithExecutor(conn, msg)
 	}
 }
 
@@ -254,13 +255,27 @@ func (n *Node) BroadcastMessage(message string) {
 	}
 }
 
-// SendFile sends a file to a peer.
+// SendFile sends a file to a peer using an existing connection.
 func (n *Node) SendFile(peerAddr string, filePath string) error {
-	conn, err := net.Dial("tcp", peerAddr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to peer: %w", err)
+	// 检查是否已经连接到该 peer
+	conn, ok := n.net.Conns.Load(peerAddr)
+	if !ok {
+		return fmt.Errorf("no connection to peer: %s", peerAddr)
 	}
-	defer conn.Close()
 
-	return n.net.SendFile(conn, filePath)
+	// 将文件发送任务提交到 executor 中执行
+	err := n.executor.Submit(func() {
+		// 使用现有的连接发送文件
+		if err := n.net.SendFile(conn.(net.Conn), filePath); err != nil {
+			n.logger.Errorf("Failed to send file to %s: %v", peerAddr, err)
+		} else {
+			n.logger.Infof("File %s sent successfully to %s", filePath, peerAddr)
+		}
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to submit file transfer task to executor: %w", err)
+	}
+
+	return nil
 }

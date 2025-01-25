@@ -106,37 +106,10 @@ def clean_temp_files(temp_files):
         except Exception as e:
             print(f"{Fore.RED}Error removing temporary config file {temp_file}: {e}{Style.RESET_ALL}")
 
-def test_file_transfer(sender_node_id, receiver_node_port, file_path):
-    """
-    测试文件传输
-    :param sender_node_id: 发送文件的节点 ID
-    :param receiver_node_port: 接收文件的节点端口
-    :param file_path: 文件路径
-    """
-    print(f"{Fore.CYAN}Testing file transfer from {sender_node_id} to localhost:{receiver_node_port}...{Style.RESET_ALL}")
-    
-    # 生成发送节点的临时配置文件路径
-    temp_config_file = f"temp_config_{sender_node_id}.json"
-    
-    # 检查临时配置文件是否存在
-    if not os.path.exists(temp_config_file):
-        print(f"{Fore.RED}Error: Temporary config file {temp_config_file} does not exist.{Style.RESET_ALL}")
-        return
-
-    # 构建文件传输命令
-    command = f'go run . {temp_config_file} sendfile {file_path} localhost:{receiver_node_port}'
-    
-    try:
-        # 执行文件传输命令
-        subprocess.run(command, shell=True, check=True)
-        print(f"{Fore.GREEN}File transfer completed.{Style.RESET_ALL}")
-    except subprocess.CalledProcessError as e:
-        print(f"{Fore.RED}Error during file transfer: {e}{Style.RESET_ALL}")
-
 def main():
     # 检查命令行参数
     if len(sys.argv) < 2:
-        print(f"{Fore.RED}Usage: python run-nodes.py <config_file> [testfile <file_path>]{Style.RESET_ALL}")
+        print(f"{Fore.RED}Usage: python run-nodes.py <config_file>{Style.RESET_ALL}")
         sys.exit(1)
 
     # 加载配置文件
@@ -158,21 +131,6 @@ def main():
             if process and temp_file:
                 processes.append(process)
                 temp_files.append(temp_file)
-
-        # 如果需要测试文件传输
-        if len(sys.argv) > 2 and sys.argv[2] == "testfile":
-            if len(sys.argv) < 4:
-                print(f"{Fore.RED}Usage: python run-nodes.py <config_file> testfile <file_path>{Style.RESET_ALL}")
-                sys.exit(1)
-
-            file_path = sys.argv[3]
-            
-            # 假设第一个节点是发送方，第二个节点是接收方
-            sender_node_id = nodes[0]["id"]  # 发送节点的 ID
-            receiver_node_port = nodes[1]["port"]  # 接收节点的端口
-            
-            # 测试文件传输
-            test_file_transfer(sender_node_id, receiver_node_port, file_path)
 
         # 等待所有节点运行
         print(f"{Fore.GREEN}All nodes started. Press Ctrl+C to stop.{Style.RESET_ALL}")

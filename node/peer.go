@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -71,20 +72,20 @@ func (pm *PeerManager) CheckPeerHealth(timeout time.Duration) {
 }
 
 // connectToPeer attempts to connect to a peer.
-func (n *Node) connectToPeer(peerAddr string) {
+func (n *Node) connectToPeer(peerAddr string) error {
 	if peerAddr == ":"+n.Port {
 		n.logger.Debugf("Skipping connection to self: %s", peerAddr)
-		return
+		return nil
 	}
 
 	if _, loaded := n.peers.KnownPeers.Load(peerAddr); loaded {
 		n.logger.Debugf("Already connected to peer: %s", peerAddr)
-		return
+		return nil
 	}
 
 	conn, err := n.establishPeerConnection(peerAddr)
 	if err != nil {
-		return
+		return fmt.Errorf("failed to connect to peer: %w", err)
 	}
 
 	n.net.addConn(conn)
@@ -100,9 +101,10 @@ func (n *Node) connectToPeer(peerAddr string) {
 	if err != nil {
 		n.logger.Errorf("Failed to submit connection handling task to executor: %v", err)
 	}
+
+	return nil
 }
 
-// establishPeerConnection 尝试与指定 Peer 建立连接
 func (n *Node) establishPeerConnection(peerAddr string) (net.Conn, error) {
 	n.logger.Infof("Attempting to connect to peer: %s", peerAddr)
 	conn, err := net.Dial("tcp", peerAddr)

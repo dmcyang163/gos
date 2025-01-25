@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -113,15 +114,21 @@ type FileTransferHandler struct {
 	fileBuffers sync.Map // 用于存储文件块的缓冲区
 }
 
-// fileBuffer 用于存储文件块的缓冲区
 func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	n.logger.WithFields(logrus.Fields{
 		"sender":  msg.Sender,
 		"address": msg.Address,
 		"file":    msg.FileName,
 		"chunk":   msg.ChunkID,
+		"is_last": msg.IsLast, // 打印 IsLast 字段
 	}).Info("Received file transfer chunk")
 
+	// 检查连接状态
+	if _, err := conn.Write([]byte{}); err != nil {
+		fmt.Printf("Connection to %s is closed: %v", conn.RemoteAddr().String(), err)
+		n.logger.Errorf("Connection to %s is closed: %v", conn.RemoteAddr().String(), err)
+		return
+	}
 	// 获取或创建文件缓冲区
 	buffer, _ := h.fileBuffers.LoadOrStore(msg.FileName, &fileBuffer{
 		chunks: make(map[int][]byte),
@@ -136,6 +143,8 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 
 	// 如果是最后一块，则写入文件
 	if msg.IsLast {
+		fmt.Printf("last chunk!!!!%d\n", msg.ChunkID)
+
 		go h.writeFile(n, msg.FileName, fb)
 		h.fileBuffers.Delete(msg.FileName)
 	}
@@ -148,6 +157,7 @@ func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer
 	n.logger.WithFields(map[string]interface{}{
 		"received_files": fileName,
 	}).Info("MkdirAll received_files")
+
 	// 构建文件路径
 	filePath := filepath.Join("received_files", fileName)
 
@@ -223,5 +233,6 @@ func shouldReplyToMessage(msg Message) bool {
 
 // generateMessageID generates a unique message ID.
 func generateMessageID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return fmt.Sprintf("%d-%d-%d", time.Now().UnixNano(), rand.Intn(1000000), os.Getpid())
+
 }

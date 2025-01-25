@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"math/rand"
-	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"time"
@@ -15,7 +14,7 @@ import (
 func main() {
 	// 启动 pprof 性能分析服务器
 	go func() {
-		http.ListenAndServe(":6060", nil)
+		//http.ListenAndServe(":6060", nil)
 	}()
 
 	// 初始化随机数种子
@@ -23,7 +22,7 @@ func main() {
 
 	// 检查命令行参数
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run main.go <config_file> [sendfile <file_path> <peer_addr>]")
+		fmt.Println("Usage: go run main.go <config_file>")
 		return
 	}
 
@@ -66,22 +65,21 @@ func main() {
 
 	// 连接到引导节点
 	if config.BootstrapNode != "" {
-		node.connectToPeer(config.BootstrapNode)
-	}
+		if err := node.connectToPeer(config.BootstrapNode); err != nil {
+			logger.Errorf("Failed to connect to bootstrap node: %v", err)
+		} else {
+			// 连接成功后，等待 5 秒再发送文件
+			time.Sleep(5 * time.Second)
 
-	// 检查是否需要发送文件
-	if len(os.Args) > 2 && os.Args[2] == "sendfile" {
-		if len(os.Args) < 5 {
-			fmt.Println("Usage: go run main.go <config_file> sendfile <file_path> <peer_addr>")
-			return
-		}
+			// 发送文件
+			filePath := "D:/young/gos/node/111111.dll" // 要发送的文件路径
+			if err := node.SendFile("127.0.0.1:1234", filePath); err != nil {
+				logger.Errorf("Failed to send file: %v", err)
+			} else {
+				logger.Infof("File %s sent successfully to %s", filePath, config.BootstrapNode)
+			}
 
-		filePath := os.Args[3]
-		peerAddr := os.Args[4]
-		if err := node.SendFile(peerAddr, filePath); err != nil {
-			fmt.Printf("Error sending file: %v\n", err)
 		}
-		return
 	}
 
 	// 读取用户输入并发送消息
