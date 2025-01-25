@@ -39,7 +39,7 @@ func main() {
 	logger := NewLogrusLogger(config)
 
 	// 初始化 Goroutine 池
-	executor, err := NewAntsExecutor(100)
+	executor, err := NewAntsExecutor(100, logger)
 	if err != nil {
 		fmt.Printf("Error creating executor: %v\n", err)
 		return

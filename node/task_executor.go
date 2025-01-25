@@ -5,7 +5,6 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	"log"
 	"reflect"
 	"runtime"
 	"strings"
@@ -36,10 +35,11 @@ type AntsExecutor struct {
 	mu        sync.Mutex
 	taskQueue *PriorityQueue // 优先级队列
 	stats     PoolStats      // 统计信息
+	logger    Logger         // 使用项目中的 Logger 模块
 }
 
 // NewAntsExecutor 创建一个新的 AntsExecutor
-func NewAntsExecutor(size int) (TaskExecutor, error) {
+func NewAntsExecutor(size int, logger Logger) (TaskExecutor, error) {
 	pool, err := ants.NewPool(size)
 	if err != nil {
 		return nil, err
@@ -50,6 +50,7 @@ func NewAntsExecutor(size int) (TaskExecutor, error) {
 		pool:      pool,
 		taskQueue: taskQueue,
 		stats:     PoolStats{},
+		logger:    logger,
 	}, nil
 }
 
@@ -84,14 +85,14 @@ func (e *AntsExecutor) Submit(task TaskFunc) error {
 
 	wrappedTask := func() {
 		start := time.Now()
-		log.Printf("Task %s started", taskName)
+		e.logger.Infof("Task %s started", taskName)
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Task %s panic: %v", taskName, r)
+				e.logger.Errorf("Task %s panic: %v", taskName, r)
 				e.stats.FailedTasks++
 			}
 			e.stats.TaskDuration = time.Since(start)
-			log.Printf("Task %s finished in %v", taskName, e.stats.TaskDuration)
+			e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
 		}()
 		task()
 	}
@@ -109,14 +110,14 @@ func (e *AntsExecutor) SubmitWithPriority(task TaskFunc, priority int) error {
 
 	wrappedTask := func() {
 		start := time.Now()
-		log.Printf("Task %s (priority %d) started", taskName, priority)
+		e.logger.Infof("Task %s (priority %d) started", taskName, priority)
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Task %s (priority %d) panic: %v", taskName, priority, r)
+				e.logger.Errorf("Task %s (priority %d) panic: %v", taskName, priority, r)
 				e.stats.FailedTasks++
 			}
 			e.stats.TaskDuration = time.Since(start)
-			log.Printf("Task %s (priority %d) finished in %v", taskName, priority, e.stats.TaskDuration)
+			e.logger.Infof("Task %s (priority %d) finished in %v", taskName, priority, e.stats.TaskDuration)
 		}()
 		task()
 	}
@@ -148,18 +149,18 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 			select {
 			case <-ctx.Done():
 				e.stats.TimeoutTasks++
-				log.Printf("Task %s timed out", taskName)
+				e.logger.Warnf("Task %s timed out", taskName)
 				return // 任务被取消
 			default:
 				start := time.Now()
-				log.Printf("Task %s started", taskName)
+				e.logger.Infof("Task %s started", taskName)
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("Task %s panic: %v", taskName, r)
+						e.logger.Errorf("Task %s panic: %v", taskName, r)
 						e.stats.FailedTasks++
 					}
 					e.stats.TaskDuration = time.Since(start)
-					log.Printf("Task %s finished in %v", taskName, e.stats.TaskDuration)
+					e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
 				}()
 				task()
 			}
@@ -184,14 +185,14 @@ func (e *AntsExecutor) SubmitWithRetry(task TaskFunc, retries int) error {
 		func() error {
 			return e.pool.Submit(func() {
 				start := time.Now()
-				log.Printf("Task %s started (retry)", taskName)
+				e.logger.Infof("Task %s started (retry)", taskName)
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("Task %s panic: %v", taskName, r)
+						e.logger.Errorf("Task %s panic: %v", taskName, r)
 						e.stats.FailedTasks++
 					}
 					e.stats.TaskDuration = time.Since(start)
-					log.Printf("Task %s finished in %v", taskName, e.stats.TaskDuration)
+					e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
 				}()
 				task()
 			})
