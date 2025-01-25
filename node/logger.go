@@ -36,10 +36,10 @@ func NewLogrusLogger(config *Config) Logger {
 	// 配置日志轮转
 	logger.SetOutput(&lumberjack.Logger{
 		Filename:   "node.log",
-		MaxSize:    config.LogMaxSize,
-		MaxBackups: config.LogMaxBackups,
-		MaxAge:     config.LogMaxAge,
-		Compress:   config.LogCompress,
+		MaxSize:    config.Log.MaxSize,    // 从 LogConfig 中读取
+		MaxBackups: config.Log.MaxBackups, // 从 LogConfig 中读取
+		MaxAge:     config.Log.MaxAge,     // 从 LogConfig 中读取
+		Compress:   config.Log.Compress,   // 从 LogConfig 中读取
 	})
 
 	// 同时输出到控制台
@@ -56,7 +56,7 @@ func NewLogrusLogger(config *Config) Logger {
 	})
 
 	// 设置日志级别
-	switch config.LogLevel {
+	switch config.Log.Level { // 从 LogConfig 中读取
 	case "debug":
 		logger.SetLevel(logrus.DebugLevel)
 	case "info":
@@ -128,7 +128,7 @@ func SetLogLevel(logger Logger, level string) {
 }
 
 // StartLogLevelAPI starts an HTTP server to dynamically adjust the log level.
-func StartLogLevelAPI(logger Logger, port string) {
+func StartLogLevelAPI(logger Logger, config *Config) {
 	http.HandleFunc("/loglevel", func(w http.ResponseWriter, r *http.Request) {
 		level := r.URL.Query().Get("level")
 		if level == "" {
@@ -139,6 +139,6 @@ func StartLogLevelAPI(logger Logger, port string) {
 		w.Write([]byte("Log level updated to " + level))
 	})
 
-	go http.ListenAndServe(":"+port, nil)
-	logger.WithFields(map[string]interface{}{"port": port}).Info("Log level API started")
+	go http.ListenAndServe(":"+config.Log.APIPort, nil) // 从 LogConfig 中读取
+	logger.WithFields(map[string]interface{}{"port": config.Log.APIPort}).Info("Log level API started")
 }

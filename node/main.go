@@ -50,7 +50,7 @@ func main() {
 	node := NewNode(config, names, logger, executor)
 
 	// 启动日志级别 API
-	StartLogLevelAPI(logger, config.LogAPI)
+	StartLogLevelAPI(logger, config)
 
 	// 启动服务器和其他协程
 	go node.startServer()

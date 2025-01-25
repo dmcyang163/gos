@@ -9,17 +9,21 @@ import (
 
 // Config represents the configuration for the node.
 type Config struct {
-	Port              string `json:"port"`
-	BootstrapNode     string `json:"bootstrap_node"`
-	MaxConns          int    `json:"max_conns"`
-	LogLevel          string `json:"log_level"`
-	LogMaxSize        int    `json:"log_max_size"`
-	LogMaxBackups     int    `json:"log_max_backups"`
-	LogMaxAge         int    `json:"log_max_age"`
-	LogCompress       bool   `json:"log_compress"`
-	DiscoveryInterval int    `json:"discovery_interval"`
-	HeartbeatInterval int    `json:"heartbeat_interval"`
-	LogAPI            string `json:"log_api"`
+	Port              string    `json:"port"`
+	BootstrapNode     string    `json:"bootstrap_node"`
+	MaxConns          int       `json:"max_conns"`
+	DiscoveryInterval int       `json:"discovery_interval"`
+	HeartbeatInterval int       `json:"heartbeat_interval"`
+	Log               LogConfig `json:"log"`
+}
+
+type LogConfig struct {
+	Level      string `json:"level"`
+	MaxSize    int    `json:"max_size"`
+	MaxBackups int    `json:"max_backups"`
+	MaxAge     int    `json:"max_age"`
+	Compress   bool   `json:"compress"`
+	APIPort    string `json:"api_port"`
 }
 
 // NameEntry represents a name with its description and dialogues.
