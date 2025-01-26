@@ -129,6 +129,9 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 		n.logger.Errorf("Connection to %s is closed: %v", conn.RemoteAddr().String(), err)
 		return
 	}
+
+	fmt.Printf("rec fileName %s\n", msg.FileName)
+
 	// 获取或创建文件缓冲区
 	buffer, _ := h.fileBuffers.LoadOrStore(msg.FileName, &fileBuffer{
 		chunks: make(map[int][]byte),
@@ -154,12 +157,18 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer) {
 	// 确保 received_files 目录存在
 	os.MkdirAll("received_files", os.ModePerm)
-	n.logger.WithFields(map[string]interface{}{
-		"received_files": fileName,
-	}).Info("MkdirAll received_files")
+
+	fmt.Printf("send last chunk %d\n", 111111111111111)
 
 	// 构建文件路径
 	filePath := filepath.Join("received_files", fileName)
+
+	// 创建目录（如果不存在）
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		n.logger.WithError(err).Error("Failed to create directory")
+		return
+	}
 
 	// 创建文件
 	file, err := os.Create(filePath)

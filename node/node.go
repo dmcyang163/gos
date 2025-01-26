@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -253,6 +255,53 @@ func (n *Node) BroadcastMessage(message string) {
 			}).Error("Failed to submit broadcast task to executor")
 		}
 	}
+}
+
+// SendDir 发送目录中的所有文件
+// SendDir 发送目录中的所有文件
+func (n *Node) SendDir(peerAddr string, dirPath string) error {
+	// 检查目录是否存在
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		return fmt.Errorf("directory does not exist: %s", dirPath)
+	}
+
+	// 获取目录名字
+	dirName := filepath.Base(dirPath)
+
+	// 遍历目录
+	err := filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// 忽略目录，只发送文件
+		if info.IsDir() {
+			return nil
+		}
+
+		// 计算相对路径
+		relPath, err := filepath.Rel(dirPath, filePath)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path: %w", err)
+		}
+
+		// 拼接目录名字和文件名
+		fullFileName := filepath.Join(dirName, relPath)
+
+		// 调用 SendFile 发送文件
+		if err := n.SendFile(peerAddr, filePath); err != nil {
+			return fmt.Errorf("failed to send file %s: %w", filePath, err)
+		}
+
+		n.logger.Infof("Sent file: %s", fullFileName)
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to walk directory: %w", err)
+	}
+
+	return nil
 }
 
 // SendFile sends a file to a peer using an existing connection.
