@@ -35,7 +35,7 @@ func NewLogrusLogger(config *Config) Logger {
 
 	// 配置日志轮转
 	logger.SetOutput(&lumberjack.Logger{
-		Filename:   "node.log",
+		Filename:   "log/node.log",
 		MaxSize:    config.Log.MaxSize,    // 从 LogConfig 中读取
 		MaxBackups: config.Log.MaxBackups, // 从 LogConfig 中读取
 		MaxAge:     config.Log.MaxAge,     // 从 LogConfig 中读取

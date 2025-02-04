@@ -32,6 +32,16 @@ type MessageHandler interface {
 	HandleMessage(n *Node, conn net.Conn, msg Message)
 }
 
+func sendMessage(n *Node, conn net.Conn, msgType string, data string) {
+	n.net.SendMessage(conn, Message{
+		Type:    msgType,
+		Data:    data,
+		Sender:  n.Name,
+		Address: ":" + n.Port,
+		ID:      generateMessageID(),
+	})
+}
+
 // PeerListHandler handles "peer_list" messages.
 type PeerListHandler struct{}
 
@@ -87,7 +97,8 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 			n.logger.WithFields(logrus.Fields{
 				"reply": dialogue,
 			}).Info("Sending reply")
-			n.net.SendMessage(conn, Message{Type: MessageTypeChat, Data: dialogue, Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}) // 传递 compressFunc
+
+			sendMessage(n, conn, MessageTypeChat, string(dialogue))
 		}
 	}()
 }
@@ -98,7 +109,7 @@ type PingHandler struct{}
 func (h *PingHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	n.logger.Debugf("Received ping from: %s", conn.RemoteAddr().String())
 	// 回复 Pong 消息
-	n.net.SendMessage(conn, Message{Type: MessageTypePong, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}) // 传递 compressFunc
+	sendMessage(n, conn, MessageTypePong, "")
 }
 
 // PongHandler handles "pong" messages.
@@ -225,13 +236,7 @@ func (h *NodeStatusHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 		return
 	}
 
-	n.net.SendMessage(conn, Message{
-		Type:    MessageTypeNodeStatus,
-		Data:    string(statusBytes),
-		Sender:  n.Name,
-		Address: ":" + n.Port,
-		ID:      generateMessageID(),
-	}) // 传递 compressFunc
+	sendMessage(n, conn, MessageTypeNodeStatus, string(statusBytes))
 }
 
 // shouldReplyToMessage decides whether to reply to a message.
