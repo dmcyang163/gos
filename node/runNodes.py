@@ -8,6 +8,18 @@ from colorama import Fore, Style, init
 # 初始化 colorama
 init(autoreset=True)
 
+def handle_error(message, error=None):
+    """
+    处理错误信息并退出程序
+    :param message: 错误信息
+    :param error: 异常对象（可选）
+    """
+    if error:
+        print(f"{Fore.RED}{message}: {error}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.RED}{message}{Style.RESET_ALL}")
+    sys.exit(1)
+
 def load_config(config_file):
     """
     加载配置文件
@@ -17,9 +29,10 @@ def load_config(config_file):
     try:
         with open(config_file, "r") as f:
             return json.load(f)
-    except Exception as e:
-        print(f"Error loading config: {e}")
-        sys.exit(1)
+    except FileNotFoundError:
+        handle_error(f"Config file {config_file} not found.")
+    except json.JSONDecodeError as e:
+        handle_error("Error decoding config file", e)
 
 def write_temp_config(node_config):
     """
@@ -31,10 +44,10 @@ def write_temp_config(node_config):
     temp_config_file = f"temp_config_{node_id}.json"
     try:
         with open(temp_config_file, "w") as f:
-            json.dump(node_config, f)
+            json.dump(node_config, f, indent=4)
         return temp_config_file
     except Exception as e:
-        print(f"{Fore.RED}Error writing temporary config file: {e}{Style.RESET_ALL}")
+        handle_error("Error writing temporary config file", e)
         return None
 
 def start_node_process(temp_config_file):
@@ -48,13 +61,20 @@ def start_node_process(temp_config_file):
             # Windows 使用 start 命令打开新终端
             command = f'start cmd /k go run . {temp_config_file}'
             process = subprocess.Popen(command, shell=True)
-        else:
-            # Linux/Mac 使用 gnome-terminal 或 xterm 打开新终端
-            command = f'gnome-terminal -- bash -c "go run . {temp_config_file}; exec bash"'
+        elif sys.platform.startswith('linux'):
+            # Linux 使用 x-terminal-emulator 打开新终端
+            command = f'x-terminal-emulator -e "bash -c \'go run . {temp_config_file}; exec bash\'"'
             process = subprocess.Popen(command, shell=True)
+        elif sys.platform == "darwin":
+            # Mac 使用 osascript 打开新终端
+            command = f'osascript -e \'tell app "Terminal" to do script "go run . {temp_config_file}"\''
+            process = subprocess.Popen(command, shell=True)
+        else:
+            handle_error(f"Unsupported operating system: {sys.platform}")
+            return None
         return process
     except Exception as e:
-        print(f"{Fore.RED}Error starting node: {e}{Style.RESET_ALL}")
+        handle_error("Error starting node", e)
         return None
 
 def start_node(node_config):
@@ -90,8 +110,9 @@ def stop_nodes(processes):
     for process in processes:
         try:
             process.terminate()
+            process.wait()  # 等待进程终止
         except Exception as e:
-            print(f"{Fore.RED}Error stopping process: {e}{Style.RESET_ALL}")
+            handle_error(f"Error stopping process", e)
     print(f"{Fore.GREEN}All nodes stopped.{Style.RESET_ALL}")
 
 def clean_temp_files(temp_files):
@@ -101,16 +122,16 @@ def clean_temp_files(temp_files):
     """
     for temp_file in temp_files:
         try:
-            os.remove(temp_file)
-            print(f"{Fore.BLUE}Removed temporary config file: {temp_file}{Style.RESET_ALL}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+                print(f"{Fore.BLUE}Removed temporary config file: {temp_file}{Style.RESET_ALL}")
         except Exception as e:
-            print(f"{Fore.RED}Error removing temporary config file {temp_file}: {e}{Style.RESET_ALL}")
+            handle_error(f"Error removing temporary config file {temp_file}", e)
 
 def main():
     # 检查命令行参数
     if len(sys.argv) < 2:
-        print(f"{Fore.RED}Usage: python run-nodes.py <config_file>{Style.RESET_ALL}")
-        sys.exit(1)
+        handle_error("Usage: python run-nodes.py <config_file>")
 
     # 加载配置文件
     config_file = sys.argv[1]
@@ -119,8 +140,7 @@ def main():
     # 读取节点配置
     nodes = config.get("nodes", [])
     if not nodes:
-        print(f"{Fore.RED}No nodes found in config.json{Style.RESET_ALL}")
-        sys.exit(1)
+        handle_error("No nodes found in config.json")
 
     processes = []
     temp_files = []
