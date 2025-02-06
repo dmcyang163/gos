@@ -61,9 +61,9 @@ def start_node_process(temp_config_file):
             # Windows 使用 start 命令打开新终端
             command = f'start cmd /k go run . -c {temp_config_file}'
             process = subprocess.Popen(command, shell=True)
-        elif sys.platform.startswith('linux'):
-            # Linux 使用 x-terminal-emulator 打开新终端
-            command = f'x-terminal-emulator -e "bash -c \'go run . -c {temp_config_file}; exec bash\'"'
+        elif sys.platform =="linux":
+            # Linux 使用 gnome-terminal 打开新终端
+            command = f'gnome-terminal -- bash -c \'go run . -c {temp_config_file}; exec bash\''
             process = subprocess.Popen(command, shell=True)
         elif sys.platform == "darwin":
             # Mac 使用 osascript 打开新终端
