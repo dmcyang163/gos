@@ -141,10 +141,12 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 	// 获取任务函数的名称
 	taskName := getFunctionName(task)
 
-	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
 	var err error
 
 	go func() {
+		defer wg.Done()
 		err = e.pool.Submit(func() {
 			select {
 			case <-ctx.Done():
@@ -165,15 +167,10 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 				task()
 			}
 		})
-		close(done)
 	}()
 
-	select {
-	case <-done:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	wg.Wait()
+	return err
 }
 
 // SubmitWithRetry 提交带重试的任务到 Goroutine 池
