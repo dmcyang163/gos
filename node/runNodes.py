@@ -59,15 +59,15 @@ def start_node_process(temp_config_file):
     try:
         if sys.platform == "win32":
             # Windows 使用 start 命令打开新终端
-            command = f'start cmd /k go run . {temp_config_file}'
+            command = f'start cmd /k go run . -c {temp_config_file}'
             process = subprocess.Popen(command, shell=True)
         elif sys.platform.startswith('linux'):
             # Linux 使用 x-terminal-emulator 打开新终端
-            command = f'x-terminal-emulator -e "bash -c \'go run . {temp_config_file}; exec bash\'"'
+            command = f'x-terminal-emulator -e "bash -c \'go run . -c {temp_config_file}; exec bash\'"'
             process = subprocess.Popen(command, shell=True)
         elif sys.platform == "darwin":
             # Mac 使用 osascript 打开新终端
-            command = f'osascript -e \'tell app "Terminal" to do script "go run . {temp_config_file}"\''
+            command = f'osascript -e \'tell app "Terminal" to do script "go run . -c {temp_config_file}"\''
             process = subprocess.Popen(command, shell=True)
         else:
             handle_error(f"Unsupported operating system: {sys.platform}")

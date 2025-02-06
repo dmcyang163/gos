@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/spf13/pflag"
 )
 
 func main() {
@@ -20,15 +21,20 @@ func main() {
 	// 初始化随机数种子
 	rand.Seed(time.Now().UnixNano())
 
+	// 定义命令行参数
+	var configFile string
+	pflag.StringVarP(&configFile, "config", "c", "", "Path to the configuration file")
+	pflag.Parse()
+
 	// 检查命令行参数
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run main.go <config_file>")
+	if configFile == "" {
+		fmt.Println("Usage: go run main.go -c <config_file>")
 		return
 	}
 
 	// 加载配置文件
 	configLoader := NewJSONConfigLoader()
-	config, err := configLoader.LoadConfig(os.Args[1])
+	config, err := configLoader.LoadConfig(configFile)
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		return
