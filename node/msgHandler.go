@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -27,6 +28,12 @@ const (
 	MessageTypeNodeStatus   = "node_status"
 )
 
+var jsonBufferPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
 // MessageHandler defines the interface for handling messages.
 type MessageHandler interface {
 	HandleMessage(n *Node, conn net.Conn, msg Message)
@@ -47,7 +54,11 @@ type PeerListHandler struct{}
 
 func (h *PeerListHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	var peers []string
-	if err := json.Unmarshal([]byte(msg.Data), &peers); err != nil {
+	buffer := jsonBufferPool.Get().(*bytes.Buffer)
+	defer jsonBufferPool.Put(buffer)
+	buffer.Reset()
+
+	if err := json.NewDecoder(strings.NewReader(msg.Data)).Decode(&peers); err != nil {
 		n.logger.WithError(err).Error("Error decoding peer list")
 		return
 	}

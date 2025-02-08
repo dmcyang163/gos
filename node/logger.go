@@ -29,21 +29,25 @@ type LogrusLogger struct {
 	logger *logrus.Logger
 }
 
+var logFile = &lumberjack.Logger{
+	Filename:   "log/node.log",
+	MaxSize:    100, // Default values, will be overridden by config
+	MaxBackups: 3,
+	MaxAge:     28,
+	Compress:   true,
+}
+
 // NewLogrusLogger 创建一个新的 LogrusLogger
 func NewLogrusLogger(config *Config) Logger {
 	logger := logrus.New()
 
 	// 配置日志轮转
-	logger.SetOutput(&lumberjack.Logger{
-		Filename:   "log/node.log",
-		MaxSize:    config.Log.MaxSize,    // 从 LogConfig 中读取
-		MaxBackups: config.Log.MaxBackups, // 从 LogConfig 中读取
-		MaxAge:     config.Log.MaxAge,     // 从 LogConfig 中读取
-		Compress:   config.Log.Compress,   // 从 LogConfig 中读取
-	})
+	logFile.MaxSize = config.Log.MaxSize
+	logFile.MaxBackups = config.Log.MaxBackups
+	logFile.MaxAge = config.Log.MaxAge
+	logFile.Compress = config.Log.Compress
 
-	// 同时输出到控制台
-	logger.SetOutput(io.MultiWriter(os.Stdout, logger.Out))
+	logger.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
 	// 设置日志格式为 JSON
 	logger.SetFormatter(&logrus.JSONFormatter{
