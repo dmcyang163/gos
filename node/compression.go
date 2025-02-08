@@ -59,7 +59,7 @@ func decompressMessage(data []byte) (Message, error) {
 func newBufferPool() *sync.Pool {
 	return &sync.Pool{
 		New: func() interface{} {
-			buf := make([]byte, 1024*1024*4) // 初始缓冲区大小为 4096 字节
+			buf := make([]byte, 1024*1024*4) // 初始缓冲区大小为 4M 字节
 			return &buf                      // 返回切片的指针
 		},
 	}

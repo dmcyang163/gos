@@ -1,4 +1,3 @@
-// network.go
 package main
 
 import (
@@ -41,7 +40,7 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
 }
 
-// SendFile sends a file in chunks.
+// SendFile sends a file in chunks using sendBufferPool.
 func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -55,7 +54,18 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 	}
 
 	chunkSize := 1024 * 1024 // 1MB per chunk
-	buffer := make([]byte, chunkSize)
+
+	// 从 sendBufferPool 获取缓冲区
+	bufferPtr := nm.sendBufferPool.Get().(*[]byte)
+	defer nm.sendBufferPool.Put(bufferPtr)
+	buffer := *bufferPtr
+
+	if len(buffer) < chunkSize {
+		buffer = make([]byte, chunkSize)
+	} else {
+		buffer = buffer[:chunkSize]
+	}
+
 	chunkID := 0
 
 	for {
@@ -72,7 +82,8 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 			ChunkID:  chunkID,
 			IsLast:   err == io.EOF, // 如果是文件末尾，设置 IsLast 为 true
 		}
-		// fmt.Printf("Sending file chunk: file=%s, chunk=%d, size=%d, is_last=%v\n", msg.FileName, msg.ChunkID, len(msg.Chunk), msg.IsLast)
+
+		// 发送消息
 		if err := nm.SendMessage(conn, msg); err != nil {
 			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
@@ -82,7 +93,6 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 		// 如果是文件末尾，退出循环
 		if err == io.EOF {
 			fmt.Printf("send last chunk %d\n", chunkID)
-
 			break
 		}
 	}
@@ -98,55 +108,47 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 		return err
 	}
 
-	// 从缓冲池中获取缓冲区
-	bufferPtr := nm.sendBufferPool.Get().(*[]byte)
-	defer nm.sendBufferPool.Put(bufferPtr)
-	buffer := *bufferPtr
+	// 使用 SendRawMessage 发送压缩后的消息
+	return nm.SendRawMessage(conn, msgBytes)
+}
 
-	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
-	if len(msgBytes) > len(buffer) {
-		buffer = make([]byte, len(msgBytes))
-	} else {
-		buffer = buffer[:len(msgBytes)]
-	}
-
-	// 将消息内容复制到缓冲区
-	copy(buffer, msgBytes)
-
+// SendRawMessage sends raw bytes to a connection without additional copying.
+func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
 	// 发送消息长度
-	length := uint32(len(buffer))
-	lengthBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBytes, length)
-	if _, err := conn.Write(lengthBytes); err != nil {
+	if err := nm.writeLength(conn, uint32(len(data))); err != nil {
 		return fmt.Errorf("error sending message length: %w", err)
 	}
 
-	// 发送消息体
-	if _, err := conn.Write(buffer); err != nil {
+	// 直接发送消息体
+	if _, err := conn.Write(data); err != nil {
 		return fmt.Errorf("error sending message body: %w", err)
 	}
 
 	return nil
 }
 
+// writeLength writes the length of the message as a 4-byte big-endian integer.
+func (nm *NetworkManager) writeLength(conn net.Conn, length uint32) error {
+	lengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBytes, length)
+	_, err := conn.Write(lengthBytes)
+	return err
+}
+
 // ReadMessage reads a message from the connection.
 func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
-
 	reader := bufio.NewReader(conn)
+
+	// 读取消息长度
+	length, err := nm.readLength(reader)
+	if err != nil {
+		return Message{}, fmt.Errorf("error reading message length: %w", err)
+	}
 
 	// 从缓冲池中获取缓冲区
 	bufferPtr := nm.readBufferPool.Get().(*[]byte)
 	defer nm.readBufferPool.Put(bufferPtr)
 	buffer := *bufferPtr
-
-	// 读取消息长度
-	lengthBytes := buffer[:4]
-	_, err := io.ReadFull(reader, lengthBytes)
-	if err != nil {
-		return Message{}, fmt.Errorf("error reading message length: %w", err)
-	}
-
-	length := binary.BigEndian.Uint32(lengthBytes)
 
 	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
 	if int(length) > len(buffer) {
@@ -156,8 +158,7 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	}
 
 	// 读取消息体
-	_, err = io.ReadFull(reader, buffer)
-	if err != nil {
+	if _, err := io.ReadFull(reader, buffer); err != nil {
 		return Message{}, fmt.Errorf("error reading message body: %w", err)
 	}
 
@@ -168,6 +169,16 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	}
 
 	return msg, nil
+}
+
+// readLength reads the length of the message as a 4-byte big-endian integer.
+func (nm *NetworkManager) readLength(reader *bufio.Reader) (uint32, error) {
+	lengthBytes := make([]byte, 4)
+	_, err := io.ReadFull(reader, lengthBytes)
+	if err != nil {
+		return 0, err
+	}
+	return binary.BigEndian.Uint32(lengthBytes), nil
 }
 
 // GetConns returns a list of active connections.

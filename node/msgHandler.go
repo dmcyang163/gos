@@ -169,8 +169,6 @@ func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer
 	// 确保 received_files 目录存在
 	os.MkdirAll("received_files", os.ModePerm)
 
-	fmt.Printf("send last chunk %d\n", 111111111111111)
-
 	// 构建文件路径
 	filePath := filepath.Join("received_files", fileName)
 
