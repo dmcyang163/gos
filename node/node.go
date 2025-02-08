@@ -1,4 +1,3 @@
-// node.go
 package main
 
 import (
@@ -155,7 +154,6 @@ func (n *Node) handleConnection(conn net.Conn) {
 			}).Debug("Message already processed")
 			continue
 		}
-
 	}
 }
 
@@ -182,19 +180,16 @@ func (n *Node) handleMessageWithExecutor(conn net.Conn, msg Message) {
 	}
 }
 
-// generateTraceID generates a unique trace ID.
-func generateTraceID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
-}
-
 // startDiscovery periodically broadcasts the peer list to all connected peers.
 func (n *Node) startDiscovery() {
-	for {
-		time.Sleep(time.Duration(n.config.DiscoveryInterval) * time.Second)
+	ticker := time.NewTicker(time.Duration(n.config.DiscoveryInterval) * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		conns := n.net.GetConns()
 		for _, conn := range conns {
 			err := n.executor.Submit(func() {
-				n.sendPeerList(conn)
+				n.sendPeerList(conn) // 调用 sendPeerList 函数
 			})
 			if err != nil {
 				n.logger.WithFields(map[string]interface{}{
@@ -207,12 +202,14 @@ func (n *Node) startDiscovery() {
 
 // startHeartbeat periodically sends ping messages to all connected peers.
 func (n *Node) startHeartbeat() {
-	for {
-		time.Sleep(time.Duration(n.config.HeartbeatInterval) * time.Second)
+	ticker := time.NewTicker(time.Duration(n.config.HeartbeatInterval) * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		conns := n.net.GetConns()
 		for _, conn := range conns {
 			err := n.executor.Submit(func() {
-				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()}
+				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()} // 调用 generateMessageID 函数
 				if err := n.net.SendMessage(conn, msg); err != nil {
 					n.logger.WithFields(map[string]interface{}{
 						"error": err,
@@ -237,7 +234,7 @@ func (n *Node) BroadcastMessage(message string) {
 		Data:    message,
 		Sender:  n.Name,
 		Address: ":" + n.Port,
-		ID:      generateMessageID(),
+		ID:      generateMessageID(), // 调用 generateMessageID 函数
 	}
 
 	conns := n.net.GetConns()
@@ -257,8 +254,7 @@ func (n *Node) BroadcastMessage(message string) {
 	}
 }
 
-// SendDir 发送目录中的所有文件
-// SendDir 发送目录中的所有文件
+// SendDir sends all files in a directory to a peer.
 func (n *Node) SendDir(peerAddr string, dirPath string) error {
 	// 检查目录是否存在
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
@@ -314,11 +310,23 @@ func (n *Node) SendFile(peerAddr string, filePath string) error {
 
 	// 将文件发送任务提交到 executor 中执行
 	err := n.executor.Submit(func() {
+		n.logger.WithFields(map[string]interface{}{
+			"peer_addr": peerAddr,
+			"file_path": filePath,
+		}).Info("Starting to send file")
+
 		// 使用现有的连接发送文件
 		if err := n.net.SendFile(conn.(net.Conn), filePath); err != nil {
-			n.logger.Errorf("Failed to send file to %s: %v", peerAddr, err)
+			n.logger.WithFields(map[string]interface{}{
+				"peer_addr": peerAddr,
+				"file_path": filePath,
+				"error":     err,
+			}).Error("Failed to send file")
 		} else {
-			n.logger.Infof("File %s sent successfully to %s", filePath, peerAddr)
+			n.logger.WithFields(map[string]interface{}{
+				"peer_addr": peerAddr,
+				"file_path": filePath,
+			}).Info("File sent successfully")
 		}
 	})
 
@@ -327,4 +335,9 @@ func (n *Node) SendFile(peerAddr string, filePath string) error {
 	}
 
 	return nil
+}
+
+// generateTraceID generates a unique trace ID.
+func generateTraceID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }

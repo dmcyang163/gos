@@ -141,8 +141,6 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 		return
 	}
 
-	fmt.Printf("rec fileName %s\n", msg.FileName)
-
 	// 获取或创建文件缓冲区
 	buffer, _ := h.fileBuffers.LoadOrStore(msg.FileName, &fileBuffer{
 		chunks: make(map[int][]byte),
@@ -161,6 +159,8 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 
 		go h.writeFile(n, msg.FileName, fb)
 		h.fileBuffers.Delete(msg.FileName)
+
+		fmt.Printf("rec fileName %s\n", msg.FileName)
 	}
 }
 
