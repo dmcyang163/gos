@@ -43,7 +43,7 @@ func sendMessage(n *Node, conn net.Conn, msgType string, data string) {
 	n.net.SendMessage(conn, Message{
 		Type:    msgType,
 		Data:    data,
-		Sender:  n.Name,
+		Sender:  n.User.Name,
 		Address: ":" + n.Port,
 		ID:      generateMessageID(),
 	})
@@ -88,7 +88,7 @@ type ChatHandler struct{}
 
 func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	go func() {
-		if msg.Sender == n.Name && msg.Address == ":"+n.Port {
+		if msg.Sender == n.User.Name && msg.Address == ":"+n.Port {
 			n.logger.Debugf("Ignoring message from self: %s", msg.Sender)
 			return
 		}
@@ -232,7 +232,7 @@ func (h *NodeStatusHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 
 	// 返回节点状态
 	status := map[string]interface{}{
-		"name":    n.Name,
+		"name":    n.User.Name,
 		"port":    n.Port,
 		"peers":   n.peers.GetPeers(),
 		"conns":   len(n.net.GetConns()),

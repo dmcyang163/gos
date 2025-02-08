@@ -13,20 +13,16 @@ import (
 
 // Node represents a peer in the P2P network.
 type Node struct {
-	Port           string
-	logger         Logger
-	config         *Config
-	Name           string
-	Description    string
-	SpecialAbility string
-	Tone           string
-	Dialogues      []string
-	processedMsgs  sync.Map
-	namesMap       map[string]NameEntry
-	net            *NetworkManager
-	peers          *PeerManager
-	router         *MessageRouter
-	executor       TaskExecutor
+	Port          string
+	logger        Logger
+	config        *Config
+	User          *User
+	processedMsgs sync.Map
+	namesMap      map[string]NameEntry
+	net           *NetworkManager
+	peers         *PeerManager
+	router        *MessageRouter
+	executor      TaskExecutor
 }
 
 // NewNode creates a new Node instance.
@@ -41,6 +37,14 @@ func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExec
 		namesMap[entry.Name] = entry
 	}
 
+	user := &User{
+		Name:           name,
+		Description:    entry.Description,
+		SpecialAbility: entry.SpecialAbility,
+		Tone:           entry.Tone,
+		Dialogues:      entry.Dialogues,
+	}
+
 	// 初始化消息路由器
 	router := NewMessageRouter(logger, executor)
 
@@ -49,20 +53,16 @@ func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExec
 	peerManager := NewPeerManager(logger, executor)
 
 	return &Node{
-		Port:           config.Port,
-		logger:         logger,
-		config:         config,
-		Name:           name,
-		Description:    entry.Description,
-		SpecialAbility: entry.SpecialAbility,
-		Tone:           entry.Tone,
-		Dialogues:      entry.Dialogues,
-		processedMsgs:  sync.Map{},
-		namesMap:       namesMap,
-		net:            netManager,
-		peers:          peerManager,
-		router:         router,
-		executor:       executor,
+		Port:          config.Port,
+		logger:        logger,
+		config:        config,
+		User:          user,
+		processedMsgs: sync.Map{},
+		namesMap:      namesMap,
+		net:           netManager,
+		peers:         peerManager,
+		router:        router,
+		executor:      executor,
 	}
 }
 
@@ -92,10 +92,10 @@ func (n *Node) startServer() {
 
 	n.logger.WithFields(map[string]interface{}{
 		"port":            n.Port,
-		"name":            n.Name,
-		"description":     n.Description,
-		"special_ability": n.SpecialAbility,
-		"tone":            n.Tone,
+		"name":            n.User.Name,
+		"description":     n.User.Description,
+		"special_ability": n.User.SpecialAbility,
+		"tone":            n.User.Tone,
 	}).Info("Server started")
 
 	for {
@@ -209,7 +209,7 @@ func (n *Node) startHeartbeat() {
 		conns := n.net.GetConns()
 		for _, conn := range conns {
 			err := n.executor.Submit(func() {
-				msg := Message{Type: MessageTypePing, Data: "", Sender: n.Name, Address: ":" + n.Port, ID: generateMessageID()} // 调用 generateMessageID 函数
+				msg := Message{Type: MessageTypePing, Data: "", Sender: n.User.Name, Address: ":" + n.Port, ID: generateMessageID()} // 调用 generateMessageID 函数
 				if err := n.net.SendMessage(conn, msg); err != nil {
 					n.logger.WithFields(map[string]interface{}{
 						"error": err,
@@ -232,7 +232,7 @@ func (n *Node) BroadcastMessage(message string) {
 	msg := Message{
 		Type:    MessageTypeChat,
 		Data:    message,
-		Sender:  n.Name,
+		Sender:  n.User.Name,
 		Address: ":" + n.Port,
 		ID:      generateMessageID(), // 调用 generateMessageID 函数
 	}
