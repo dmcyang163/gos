@@ -55,16 +55,8 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 
 	chunkSize := 1024 * 1024 // 1MB per chunk
 
-	// 从 sendBufferPool 获取缓冲区
-	bufferPtr := nm.sendBufferPool.Get().(*[]byte)
-	defer nm.sendBufferPool.Put(bufferPtr)
-	buffer := *bufferPtr
-
-	if len(buffer) < chunkSize {
-		buffer = make([]byte, chunkSize)
-	} else {
-		buffer = buffer[:chunkSize]
-	}
+	buffer, releaseBuffer := nm.getBuffer(nm.sendBufferPool, chunkSize)
+	defer releaseBuffer()
 
 	chunkID := 0
 
@@ -145,17 +137,8 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 		return Message{}, fmt.Errorf("error reading message length: %w", err)
 	}
 
-	// 从缓冲池中获取缓冲区
-	bufferPtr := nm.readBufferPool.Get().(*[]byte)
-	defer nm.readBufferPool.Put(bufferPtr)
-	buffer := *bufferPtr
-
-	// 如果消息长度超过缓冲区大小，重新分配更大的缓冲区
-	if int(length) > len(buffer) {
-		buffer = make([]byte, length)
-	} else {
-		buffer = buffer[:length]
-	}
+	buffer, releaseBuffer := nm.getBuffer(nm.readBufferPool, int(length))
+	defer releaseBuffer()
 
 	// 读取消息体
 	if _, err := io.ReadFull(reader, buffer); err != nil {
@@ -189,4 +172,22 @@ func (nm *NetworkManager) GetConns() []net.Conn {
 		return true
 	})
 	return conns
+}
+
+// getBuffer gets a buffer from the specified buffer pool and ensures it has at least the specified size.
+func (nm *NetworkManager) getBuffer(pool *sync.Pool, size int) ([]byte, func()) {
+	bufferPtr := pool.Get().(*[]byte)
+	buffer := *bufferPtr
+
+	if len(buffer) < size {
+		buffer = make([]byte, size)
+	} else {
+		buffer = buffer[:size]
+	}
+
+	releaseBuffer := func() {
+		pool.Put(&buffer)
+	}
+
+	return buffer, releaseBuffer
 }
