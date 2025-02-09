@@ -16,6 +16,10 @@ type User struct {
 	SpecialAbility string   `json:"special_ability"`
 	Tone           string   `json:"tone"`
 	Dialogues      []string `json:"dialogues"`
+
+	Password    string `json:"password"` // 新增密码字段
+	IsOnline    bool   `json:"is_online"`
+	IsInvisible bool   `json:"is_invisible"`
 }
 
 // NewUser creates a new User instance with a unique UUID.

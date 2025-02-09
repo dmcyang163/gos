@@ -3,6 +3,7 @@ package storage
 import (
 	"bufio"
 	"fmt"
+	"os"
 
 	shell "github.com/ipfs/go-ipfs-api"
 )
@@ -29,7 +30,13 @@ func NewOctopus() Octopus {
 
 // AddFile 将文件添加到 IPFS 网络并返回其 CID
 func (o *octopusImpl) AddFile(filePath string) (string, error) {
-	cid, err := o.shell.Add(filePath)
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	cid, err := o.shell.Add(file)
 	if err != nil {
 		return "", fmt.Errorf("failed to add file to IPFS: %v", err)
 	}
@@ -67,7 +74,13 @@ func (o *octopusImpl) UpdateFile(cid, newFilePath string) (string, error) {
 	}
 
 	// 添加新文件
-	newCid, err := o.shell.Add(newFilePath)
+	file, err := os.Open(newFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open new file: %v", err)
+	}
+	defer file.Close()
+
+	newCid, err := o.shell.Add(file)
 	if err != nil {
 		return "", fmt.Errorf("failed to add new file to IPFS: %v", err)
 	}
