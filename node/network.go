@@ -23,8 +23,8 @@ type NetworkManager struct {
 func NewNetworkManager(logger Logger, executor TaskExecutor) *NetworkManager {
 	return &NetworkManager{
 		Conns:          sync.Map{},
-		sendBufferPool: newBufferPool(),
-		readBufferPool: newBufferPool(),
+		sendBufferPool: NewBufferPool(),
+		readBufferPool: NewBufferPool(),
 		logger:         logger,
 		executor:       executor,
 	}
@@ -95,7 +95,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 // SendMessage sends a message to a connection.
 func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	// 压缩消息
-	msgBytes, err := compressMessage(msg)
+	msgBytes, err := CompressMsg(msg)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	}
 
 	// 解压消息
-	msg, err := decompressMessage(buffer)
+	msg, err := DecompressMsg(buffer)
 	if err != nil {
 		return Message{}, fmt.Errorf("error decompressing message: %w", err)
 	}

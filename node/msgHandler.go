@@ -17,17 +17,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// MessageType 定义消息类型
-const (
-	MessageTypeChat         = "chat"
-	MessageTypePeerList     = "peer_list"
-	MessageTypePeerListReq  = "peer_list_request"
-	MessageTypePing         = "ping" // 心跳请求
-	MessageTypePong         = "pong" // 心跳响应
-	MessageTypeFileTransfer = "file_transfer"
-	MessageTypeNodeStatus   = "node_status"
-)
-
 var jsonBufferPool = sync.Pool{
 	New: func() interface{} {
 		return new(bytes.Buffer)
