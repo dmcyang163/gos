@@ -5,7 +5,6 @@ go 1.23.5
 require (
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/fatih/color v1.18.0
-	github.com/golang/snappy v0.0.4
 	github.com/google/uuid v1.6.0
 	github.com/ipfs/go-ipfs-api v0.7.0
 	github.com/panjf2000/ants/v2 v2.11.0
@@ -24,6 +23,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/ipfs/boxo v0.12.0 // indirect
 	github.com/ipfs/go-cid v0.4.1 // indirect
+	github.com/klauspost/compress v1.17.11
 	github.com/klauspost/cpuid/v2 v2.2.3 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.1.0 // indirect

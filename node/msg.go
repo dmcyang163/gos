@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"node/compressor"
 )
 
 // MessageType 定义消息类型
@@ -41,7 +42,7 @@ func CompressMsg(msg Message) ([]byte, error) {
 	}
 
 	// 调用 compression.go 中的 compress 函数
-	compressed, err := compress(data)
+	compressed, err := compressor.Compress(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress message: %w", err)
 	}
@@ -51,7 +52,7 @@ func CompressMsg(msg Message) ([]byte, error) {
 // decompressMessage 解压缩消息
 func DecompressMsg(data []byte) (Message, error) {
 	// 调用 compression.go 中的 decompress 函数
-	decoded, err := decompress(data)
+	decoded, err := compressor.Decompress(data)
 	if err != nil {
 		return Message{}, fmt.Errorf("failed to decompress message: %w", err)
 	}
