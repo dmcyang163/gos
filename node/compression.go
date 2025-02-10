@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/golang/snappy"
@@ -14,10 +15,20 @@ var (
 
 // compress 使用 Snappy 压缩数据
 func compress(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, errors.New("empty input data")
+	}
+
 	// 从 compressorPool 中获取缓冲区
 	bufferPtr := compressorPool.Get().(*[]byte) // 获取切片的指针
 	defer compressorPool.Put(bufferPtr)         // 使用完毕后放回池中
 	buffer := *bufferPtr                        // 解引用指针
+
+	// 如果缓冲区太小，动态调整大小
+	if cap(buffer) < len(data) {
+		*bufferPtr = make([]byte, len(data)*2) // 调整为输入数据的两倍
+		buffer = *bufferPtr
+	}
 
 	// 使用 Snappy 压缩数据
 	compressed := snappy.Encode(buffer, data)
@@ -26,10 +37,20 @@ func compress(data []byte) ([]byte, error) {
 
 // decompress 使用 Snappy 解压缩数据
 func decompress(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, errors.New("empty input data")
+	}
+
 	// 从 decompressorPool 中获取缓冲区
 	bufferPtr := decompressorPool.Get().(*[]byte) // 获取切片的指针
 	defer decompressorPool.Put(bufferPtr)         // 使用完毕后放回池中
 	buffer := *bufferPtr                          // 解引用指针
+
+	// 如果缓冲区太小，动态调整大小
+	if cap(buffer) < len(data)*2 { // 解压缩后数据可能更大
+		*bufferPtr = make([]byte, len(data)*4) // 调整为输入数据的四倍
+		buffer = *bufferPtr
+	}
 
 	// 使用 Snappy 解压缩数据
 	decoded, err := snappy.Decode(buffer, data)
