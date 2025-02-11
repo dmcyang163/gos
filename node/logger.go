@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/iancoleman/orderedmap"
 	"github.com/sirupsen/logrus"
@@ -62,6 +63,57 @@ func (f *OrderedJSONFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 
 	return append(serialized, '\n'), nil
 }
+
+// AsyncHook 是一个自定义的 logrus Hook，用于异步处理日志
+type AsyncHook struct {
+	logChan chan *logrus.Entry // 用于传递日志的 Channel
+	wg      sync.WaitGroup     // 用于等待 Goroutine 结束
+}
+
+// NewAsyncHook 创建一个新的 AsyncHook
+func NewAsyncHook(bufferSize int) *AsyncHook {
+	hook := &AsyncHook{
+		logChan: make(chan *logrus.Entry, bufferSize),
+	}
+	hook.wg.Add(1)
+	go hook.processLogs() // 启动 Goroutine 处理日志
+	return hook
+}
+
+// Fire 实现 logrus.Hook 接口，将日志发送到 Channel
+func (hook *AsyncHook) Fire(entry *logrus.Entry) error {
+	hook.logChan <- entry
+	return nil
+}
+
+// Levels 实现 logrus.Hook 接口，指定需要处理的日志级别
+func (hook *AsyncHook) Levels() []logrus.Level {
+	return logrus.AllLevels
+}
+
+// processLogs 处理日志，异步写入
+func (hook *AsyncHook) processLogs() {
+	defer hook.wg.Done()
+	for entry := range hook.logChan {
+		// 在这里实现日志的异步写入逻辑
+		// 例如：写入文件、发送到远程服务器等
+		data, err := entry.Logger.Formatter.Format(entry)
+		if err != nil {
+			fmt.Printf("Failed to format log entry: %v\n", err)
+			continue
+		}
+		if _, err := entry.Logger.Out.Write(data); err != nil {
+			fmt.Printf("Failed to write log entry: %v\n", err)
+		}
+	}
+}
+
+// Close 关闭 Hook，等待所有日志处理完成
+func (hook *AsyncHook) Close() {
+	close(hook.logChan) // 关闭 Channel
+	hook.wg.Wait()      // 等待 Goroutine 结束
+}
+
 func NewLogrusLogger(config *Config) Logger {
 	logger := logrus.New()
 
@@ -71,6 +123,7 @@ func NewLogrusLogger(config *Config) Logger {
 	logFile.MaxAge = config.Log.MaxAge
 	logFile.Compress = config.Log.Compress
 
+	// 设置日志输出
 	logger.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
 	// 使用自定义的 OrderedJSONFormatter
@@ -93,6 +146,16 @@ func NewLogrusLogger(config *Config) Logger {
 	default:
 		logger.SetLevel(logrus.InfoLevel)
 	}
+
+	// 添加异步 Hook
+	asyncHook := NewAsyncHook(1000) // 缓冲区大小为 1000
+	logger.AddHook(asyncHook)
+
+	// 在程序退出时关闭 Hook
+	go func() {
+		<-make(chan struct{}) // 阻塞，直到程序退出
+		asyncHook.Close()
+	}()
 
 	// 将 *logrus.Logger 转换为 *logrus.Entry
 	entry := logrus.NewEntry(logger)
@@ -146,18 +209,22 @@ func SetLogLevel(logger Logger, level string) {
 		return
 	}
 
+	var logLevel logrus.Level
 	switch level {
 	case "debug":
-		logrusLogger.entry.Logger.SetLevel(logrus.DebugLevel)
+		logLevel = logrus.DebugLevel
 	case "info":
-		logrusLogger.entry.Logger.SetLevel(logrus.InfoLevel)
+		logLevel = logrus.InfoLevel
 	case "warn":
-		logrusLogger.entry.Logger.SetLevel(logrus.WarnLevel)
+		logLevel = logrus.WarnLevel
 	case "error":
-		logrusLogger.entry.Logger.SetLevel(logrus.ErrorLevel)
+		logLevel = logrus.ErrorLevel
 	default:
-		logrusLogger.entry.Logger.SetLevel(logrus.InfoLevel)
+		logrusLogger.entry.WithFields(map[string]interface{}{"level": level}).Warn("Invalid log level")
+		return
 	}
+
+	logrusLogger.entry.Logger.SetLevel(logLevel)
 	logrusLogger.entry.WithFields(map[string]interface{}{"level": level}).Info("Log level changed")
 }
 
