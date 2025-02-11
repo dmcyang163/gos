@@ -1,4 +1,5 @@
 // msg.go
+
 package main
 
 import (
@@ -20,12 +21,11 @@ const (
 
 // Message represents a message exchanged between nodes.
 type Message struct {
-	Type       string `json:"type"`                 // 消息类型
-	Data       string `json:"data"`                 // 消息内容
-	Sender     string `json:"sender"`               // 发送者名字
-	Address    string `json:"address"`              // 发送者地址
-	ID         string `json:"id"`                   // 消息ID，用于防止重复处理
-	Compressed bool   `json:"compressed,omitempty"` // 是否已压缩
+	Type    string `json:"type"`    // 消息类型
+	Data    string `json:"data"`    // 消息内容
+	Sender  string `json:"sender"`  // 发送者名字
+	Address string `json:"address"` // 发送者地址
+	ID      string `json:"id"`      // 消息ID，用于防止重复处理
 
 	// 文件传输相关字段
 	FileName string `json:"file_name,omitempty"` // 文件名
@@ -36,16 +36,15 @@ type Message struct {
 }
 
 func CompressMsg(msg Message) ([]byte, error) {
-	// 对于小消息或不需要压缩的消息类型，直接返回原始数据
-	if msg.Type == MessageTypePing || msg.Type == MessageTypePong || msg.Type == MessageTypePeerListReq {
-		msg.Compressed = false
-		return json.Marshal(msg)
-	}
-
 	// 将消息编码为 JSON
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode message: %w", err)
+	}
+
+	// 对于小消息或不需要压缩的消息类型，直接返回原始数据
+	if msg.Type == MessageTypePing || msg.Type == MessageTypePong || msg.Type == MessageTypePeerListReq {
+		return data, nil
 	}
 
 	// 调用 compression.go 中的 compress 函数
@@ -59,19 +58,23 @@ func CompressMsg(msg Message) ([]byte, error) {
 }
 
 func DecompressMsg(data []byte) (Message, error) {
-	// 先尝试解压数据
-	decoded, err := compressor.Decompress(data)
-	if err != nil {
-		return Message{}, fmt.Errorf("failed to decompress message: %w", err)
-	}
-
-	// 解码消息
 	var msg Message
-	if err := json.Unmarshal(decoded, &msg); err != nil {
-		return Message{}, fmt.Errorf("failed to unmarshal message: %w", err)
+
+	// 尝试解压缩数据
+	decoded, err := compressor.Decompress(data)
+	if err == nil {
+		// 如果解压缩成功，则解码解压缩后的消息
+		err = json.Unmarshal(decoded, &msg)
+		if err != nil {
+			return Message{}, fmt.Errorf("failed to unmarshal decompressed message: %w", err)
+		}
+		return msg, nil
 	}
 
-	// 标记消息为已解压
-	msg.Compressed = false
+	// 如果解压缩失败，则假定消息未压缩，直接解码消息
+	err = json.Unmarshal(data, &msg)
+	if err != nil {
+		return Message{}, fmt.Errorf("failed to unmarshal uncompressed message: %w", err)
+	}
 	return msg, nil
 }

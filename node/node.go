@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Node represents a peer in the P2P network.
@@ -190,7 +192,12 @@ func (n *Node) startDiscovery() {
 		conns := n.net.GetConns()
 		for _, conn := range conns {
 			err := n.executor.Submit(func() {
-				n.sendPeerList(conn) // 调用 sendPeerList 函数
+				err := n.sendPeerList(conn)
+				if err != nil {
+					n.logger.WithFields(map[string]interface{}{
+						"error": err,
+					}).Error("Error sending peer list")
+				}
 			})
 			if err != nil {
 				n.logger.WithFields(map[string]interface{}{
@@ -344,5 +351,5 @@ func (n *Node) SendFile(peerAddr string, filePath string) error {
 
 // generateTraceID generates a unique trace ID.
 func generateTraceID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return uuid.New().String()
 }

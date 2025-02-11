@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -245,6 +245,5 @@ func shouldReplyToMessage(msg Message) bool {
 
 // generateMessageID generates a unique message ID.
 func generateMessageID() string {
-	return fmt.Sprintf("%d-%d-%d", time.Now().UnixNano(), rand.Intn(1000000), os.Getpid())
-
+	return uuid.New().String()
 }

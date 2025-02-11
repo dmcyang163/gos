@@ -112,7 +112,6 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	nm.logger.WithFields(map[string]interface{}{
 		"original_size":   len(msg.Data),
 		"compressed_size": len(msgBytes),
-		"compressed":      msg.Compressed,
 	}).Debug("Message compression details")
 
 	// 使用 SendRawMessage 发送压缩后的消息
