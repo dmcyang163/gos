@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"node/compressor"
 	"os"
@@ -110,8 +109,11 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	}
 
 	// 记录日志
-	log.Printf("Original message size: %d bytes", len(msg.Data))
-	log.Printf("Compressed message size: %d bytes", len(msgBytes))
+	nm.logger.WithFields(map[string]interface{}{
+		"original_size":   len(msg.Data),
+		"compressed_size": len(msgBytes),
+		"compressed":      msg.Compressed,
+	}).Debug("Message compression details")
 
 	// 使用 SendRawMessage 发送压缩后的消息
 	return nm.SendRawMessage(conn, msgBytes)

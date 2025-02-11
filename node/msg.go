@@ -20,11 +20,12 @@ const (
 
 // Message represents a message exchanged between nodes.
 type Message struct {
-	Type    string `json:"type"`    // 消息类型
-	Data    string `json:"data"`    // 消息内容
-	Sender  string `json:"sender"`  // 发送者名字
-	Address string `json:"address"` // 发送者地址
-	ID      string `json:"id"`      // 消息ID，用于防止重复处理
+	Type       string `json:"type"`                 // 消息类型
+	Data       string `json:"data"`                 // 消息内容
+	Sender     string `json:"sender"`               // 发送者名字
+	Address    string `json:"address"`              // 发送者地址
+	ID         string `json:"id"`                   // 消息ID，用于防止重复处理
+	Compressed bool   `json:"compressed,omitempty"` // 是否已压缩
 
 	// 文件传输相关字段
 	FileName string `json:"file_name,omitempty"` // 文件名
@@ -34,8 +35,13 @@ type Message struct {
 	IsLast   bool   `json:"is_last,omitempty"`   // 是否是最后一块
 }
 
-// compressMessage 压缩消息
 func CompressMsg(msg Message) ([]byte, error) {
+	// 对于小消息或不需要压缩的消息类型，直接返回原始数据
+	if msg.Type == MessageTypePing || msg.Type == MessageTypePong || msg.Type == MessageTypePeerListReq {
+		msg.Compressed = false
+		return json.Marshal(msg)
+	}
+
 	// 将消息编码为 JSON
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -47,12 +53,13 @@ func CompressMsg(msg Message) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress message: %w", err)
 	}
+
+	// 返回压缩后的数据
 	return compressed, nil
 }
 
-// decompressMessage 解压缩消息
 func DecompressMsg(data []byte) (Message, error) {
-	// 调用 compression.go 中的 decompress 函数
+	// 先尝试解压数据
 	decoded, err := compressor.Decompress(data)
 	if err != nil {
 		return Message{}, fmt.Errorf("failed to decompress message: %w", err)
@@ -63,5 +70,8 @@ func DecompressMsg(data []byte) (Message, error) {
 	if err := json.Unmarshal(decoded, &msg); err != nil {
 		return Message{}, fmt.Errorf("failed to unmarshal message: %w", err)
 	}
+
+	// 标记消息为已解压
+	msg.Compressed = false
 	return msg, nil
 }
