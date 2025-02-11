@@ -49,11 +49,30 @@ func shouldCompressMessage(msgType string) bool {
 	return !uncompressedMessageTypes[msgType]
 }
 
-func CompressMsg(msg Message) ([]byte, error) {
-	// 将消息编码为 JSON
+// encodeMessage 将消息编码为 JSON
+func encodeMessage(msg Message) ([]byte, error) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode message: %w", err)
+	}
+	return data, nil
+}
+
+// decodeMessage 将 JSON 数据解码为消息
+func decodeMessage(data []byte) (Message, error) {
+	var msg Message
+	err := json.Unmarshal(data, &msg)
+	if err != nil {
+		return Message{}, fmt.Errorf("failed to decode message: %w", err)
+	}
+	return msg, nil
+}
+
+func CompressMsg(msg Message) ([]byte, error) {
+	// 将消息编码为 JSON
+	data, err := encodeMessage(msg)
+	if err != nil {
+		return nil, err
 	}
 
 	// 对于小消息或不需要压缩的消息类型，直接返回原始数据
@@ -72,23 +91,13 @@ func CompressMsg(msg Message) ([]byte, error) {
 }
 
 func DecompressMsg(data []byte) (Message, error) {
-	var msg Message
-
 	// 尝试解压缩数据
 	decoded, err := compressor.Decompress(data)
 	if err == nil {
 		// 如果解压缩成功，则解码解压缩后的消息
-		err = json.Unmarshal(decoded, &msg)
-		if err != nil {
-			return Message{}, fmt.Errorf("failed to unmarshal decompressed message: %w", err)
-		}
-		return msg, nil
+		return decodeMessage(decoded)
 	}
 
 	// 如果解压缩失败，则假定消息未压缩，直接解码消息
-	err = json.Unmarshal(data, &msg)
-	if err != nil {
-		return Message{}, fmt.Errorf("failed to unmarshal uncompressed message: %w", err)
-	}
-	return msg, nil
+	return decodeMessage(data)
 }
