@@ -1,19 +1,20 @@
-// logger.go
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 
+	"github.com/iancoleman/orderedmap"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// Logger 是日志模块的接口
 type Logger interface {
 	Debugf(format string, args ...interface{})
-	Debug(args ...interface{}) // 新增 Debug 方法
+	Debug(args ...interface{})
 	Infof(format string, args ...interface{})
 	Info(args ...interface{})
 	Warnf(format string, args ...interface{})
@@ -24,9 +25,8 @@ type Logger interface {
 	WithError(err error) Logger
 }
 
-// LogrusLogger 是 logrus.Logger 的封装，实现 Logger 接口
 type LogrusLogger struct {
-	logger *logrus.Logger
+	entry *logrus.Entry
 }
 
 var logFile = &lumberjack.Logger{
@@ -37,7 +37,31 @@ var logFile = &lumberjack.Logger{
 	Compress:   true,
 }
 
-// NewLogrusLogger 创建一个新的 LogrusLogger
+type OrderedJSONFormatter struct {
+	logrus.JSONFormatter
+}
+
+func (f *OrderedJSONFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	// 创建一个有序的 map
+	data := orderedmap.New()
+
+	data.Set("level", entry.Level.String())
+	data.Set("timestamp", entry.Time.Format(f.TimestampFormat))
+	data.Set("message", entry.Message)
+
+	// 添加其他字段
+	for key, value := range entry.Data {
+		data.Set(key, value)
+	}
+
+	// 将有序的 map 转换为 JSON
+	serialized, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal fields to JSON: %w", err)
+	}
+
+	return append(serialized, '\n'), nil
+}
 func NewLogrusLogger(config *Config) Logger {
 	logger := logrus.New()
 
@@ -49,18 +73,15 @@ func NewLogrusLogger(config *Config) Logger {
 
 	logger.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
-	// 设置日志格式为 JSON
-	logger.SetFormatter(&logrus.JSONFormatter{
-		TimestampFormat: "2006-01-02 15:04:05",
-		FieldMap: logrus.FieldMap{
-			logrus.FieldKeyTime:  "timestamp",
-			logrus.FieldKeyLevel: "level",
-			logrus.FieldKeyMsg:   "message",
+	// 使用自定义的 OrderedJSONFormatter
+	logger.SetFormatter(&OrderedJSONFormatter{
+		JSONFormatter: logrus.JSONFormatter{
+			TimestampFormat: "2006-01-02 15:04:05",
 		},
 	})
 
 	// 设置日志级别
-	switch config.Log.Level { // 从 LogConfig 中读取
+	switch config.Log.Level {
 	case "debug":
 		logger.SetLevel(logrus.DebugLevel)
 	case "info":
@@ -73,62 +94,71 @@ func NewLogrusLogger(config *Config) Logger {
 		logger.SetLevel(logrus.InfoLevel)
 	}
 
-	return &LogrusLogger{logger: logger}
+	// 将 *logrus.Logger 转换为 *logrus.Entry
+	entry := logrus.NewEntry(logger)
+	return &LogrusLogger{entry: entry}
 }
 
 func (l *LogrusLogger) Debugf(format string, args ...interface{}) {
-	l.logger.Debugf(format, args...)
+	l.entry.Debugf(format, args...)
 }
 
 func (l *LogrusLogger) Debug(args ...interface{}) {
-	l.logger.Debug(args...)
+	l.entry.Debug(args...)
 }
 
 func (l *LogrusLogger) Infof(format string, args ...interface{}) {
-	l.logger.Infof(format, args...)
+	l.entry.Infof(format, args...)
 }
 
 func (l *LogrusLogger) Info(args ...interface{}) {
-	l.logger.Info(args...)
+	l.entry.Info(args...)
 }
 
 func (l *LogrusLogger) Warnf(format string, args ...interface{}) {
-	l.logger.Warnf(format, args...)
+	l.entry.Warnf(format, args...)
 }
+
 func (l *LogrusLogger) Warn(args ...interface{}) {
-	l.logger.Warn(args...)
+	l.entry.Warn(args...)
 }
+
 func (l *LogrusLogger) Errorf(format string, args ...interface{}) {
-	l.logger.Errorf(format, args...)
+	l.entry.Errorf(format, args...)
 }
 
 func (l *LogrusLogger) Error(args ...interface{}) {
-	l.logger.Error(args...)
+	l.entry.Error(args...)
 }
 
 func (l *LogrusLogger) WithFields(fields map[string]interface{}) Logger {
-	return &LogrusLogger{logger: l.logger.WithFields(fields).Logger}
+	return &LogrusLogger{entry: l.entry.WithFields(fields)}
 }
 
 func (l *LogrusLogger) WithError(err error) Logger {
-	return &LogrusLogger{logger: l.logger.WithError(err).Logger}
+	return &LogrusLogger{entry: l.entry.WithError(err)}
 }
 
 // SetLogLevel dynamically sets the log level.
 func SetLogLevel(logger Logger, level string) {
+	logrusLogger, ok := logger.(*LogrusLogger)
+	if !ok {
+		return
+	}
+
 	switch level {
 	case "debug":
-		logger.(*LogrusLogger).logger.SetLevel(logrus.DebugLevel)
+		logrusLogger.entry.Logger.SetLevel(logrus.DebugLevel)
 	case "info":
-		logger.(*LogrusLogger).logger.SetLevel(logrus.InfoLevel)
+		logrusLogger.entry.Logger.SetLevel(logrus.InfoLevel)
 	case "warn":
-		logger.(*LogrusLogger).logger.SetLevel(logrus.WarnLevel)
+		logrusLogger.entry.Logger.SetLevel(logrus.WarnLevel)
 	case "error":
-		logger.(*LogrusLogger).logger.SetLevel(logrus.ErrorLevel)
+		logrusLogger.entry.Logger.SetLevel(logrus.ErrorLevel)
 	default:
-		logger.(*LogrusLogger).logger.SetLevel(logrus.InfoLevel)
+		logrusLogger.entry.Logger.SetLevel(logrus.InfoLevel)
 	}
-	logger.WithFields(map[string]interface{}{"level": level}).Info("Log level changed")
+	logrusLogger.entry.WithFields(map[string]interface{}{"level": level}).Info("Log level changed")
 }
 
 // StartLogLevelAPI starts an HTTP server to dynamically adjust the log level.
@@ -143,6 +173,6 @@ func StartLogLevelAPI(logger Logger, config *Config) {
 		w.Write([]byte("Log level updated to " + level))
 	})
 
-	go http.ListenAndServe(":"+config.Log.APIPort, nil) // 从 LogConfig 中读取
+	go http.ListenAndServe(":"+config.Log.APIPort, nil)
 	logger.WithFields(map[string]interface{}{"port": config.Log.APIPort}).Info("Log level API started")
 }

@@ -92,21 +92,8 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		message := scanner.Text()
-		if message == "" {
-			continue // 跳过空行
-		}
-
-		// 打印用户输入
 		color.Green("You: %s\n", message)
+		node.BroadcastMessage(message)
 
-		// 广播消息
-		if err := node.BroadcastMessage(message); err != nil {
-			color.Red("Failed to broadcast message: %v\n", err)
-		}
-	}
-
-	// 检查扫描错误
-	if err := scanner.Err(); err != nil {
-		color.Red("Error reading input: %v\n", err)
 	}
 }
