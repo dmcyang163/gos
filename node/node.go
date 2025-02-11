@@ -130,6 +130,12 @@ func (n *Node) startServer() {
 
 // handleConnection handles incoming messages from a connection.
 func (n *Node) handleConnection(conn net.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			n.logger.Errorf("Recovered from panic: %v", r)
+		}
+	}()
+
 	traceID := generateTraceID()
 	n.logger.WithFields(map[string]interface{}{
 		"trace_id": traceID,

@@ -56,43 +56,106 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
-	chunkSize := 1024 * 1024 // 1MB per chunk
+	// 初始块大小
+	chunkSize := 1024 * 1024        // 1MB
+	minChunkSize := 512 * 1024      // 最小块大小 512KB
+	maxChunkSize := 4 * 1024 * 1024 // 最大块大小 4MB
 
-	buffer, releaseBuffer := nm.getBuffer(nm.sendBufferPool, chunkSize)
+	buffer, releaseBuffer := nm.getBuffer(nm.sendBufferPool, maxChunkSize)
 	defer releaseBuffer()
 
 	chunkID := 0
+	startTime := time.Now()
+	var totalBytesSent int64
 
 	for {
-		n, err := file.Read(buffer)
+		// 读取文件块
+		n, err := nm.readFileChunk(file, buffer[:chunkSize])
 		if err != nil && err != io.EOF {
-			return fmt.Errorf("failed to read file: %w", err)
+			return fmt.Errorf("failed to read file chunk: %w", err)
 		}
 
-		msg := Message{
-			Type:     MessageTypeFileTransfer,
-			FileName: fileInfo.Name(),
-			FileSize: fileInfo.Size(),
-			Chunk:    buffer[:n],
-			ChunkID:  chunkID,
-			IsLast:   err == io.EOF, // 如果是文件末尾，设置 IsLast 为 true
-		}
-
-		// 发送消息
-		if err := nm.SendMessage(conn, msg); err != nil {
+		// 发送文件块
+		if err := nm.sendChunkWithRetry(conn, fileInfo, buffer[:n], chunkID, err == io.EOF); err != nil {
 			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
 
+		totalBytesSent += int64(n)
 		chunkID++
 
-		// 如果是文件末尾，退出循环
+		// 动态调整块大小
+		chunkSize = nm.calculateChunkSize(chunkSize, minChunkSize, maxChunkSize, startTime, totalBytesSent)
+
 		if err == io.EOF {
-			fmt.Printf("send last chunk %d\n", chunkID)
 			break
 		}
 	}
-
 	return nil
+}
+
+// readFileChunk 读取文件的指定块
+func (nm *NetworkManager) readFileChunk(file *os.File, buffer []byte) (int, error) {
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return 0, fmt.Errorf("failed to read file: %w", err)
+	}
+	return n, err // 返回读取的字节数和可能的错误
+}
+
+// sendChunkWithRetry 发送文件块并支持重试机制
+func (nm *NetworkManager) sendChunkWithRetry(conn net.Conn, fileInfo os.FileInfo, chunk []byte, chunkID int, isLast bool) error {
+	msg := Message{
+		Type:     MessageTypeFileTransfer,
+		FileName: fileInfo.Name(),
+		FileSize: fileInfo.Size(),
+		Chunk:    chunk,
+		ChunkID:  chunkID,
+		IsLast:   isLast,
+	}
+
+	// 重试机制
+	retries := 3
+	for i := 0; i < retries; i++ {
+		if err := nm.SendMessage(conn, msg); err != nil {
+			if i == retries-1 {
+				return fmt.Errorf("failed to send file chunk after %d retries: %w", retries, err)
+			}
+			time.Sleep(100 * time.Millisecond) // 等待 100ms 后重试
+			continue
+		}
+		return nil // 发送成功
+	}
+	return nil
+}
+
+// calculateChunkSize 动态计算块大小
+func (nm *NetworkManager) calculateChunkSize(currentChunkSize, minChunkSize, maxChunkSize int, startTime time.Time, totalBytesSent int64) int {
+	elapsedTime := time.Since(startTime).Seconds()
+	if elapsedTime > 0 {
+		currentSpeed := float64(totalBytesSent) / elapsedTime // 当前传输速度（字节/秒）
+		if currentSpeed > 10*1024*1024 {                      // 如果传输速度大于 10MB/s，增加块大小
+			return min(currentChunkSize*2, maxChunkSize)
+		} else if currentSpeed < 1*1024*1024 { // 如果传输速度小于 1MB/s，减少块大小
+			return max(currentChunkSize/2, minChunkSize)
+		}
+	}
+	return currentChunkSize
+}
+
+// 辅助函数：返回两个数中的最小值
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// 辅助函数：返回两个数中的最大值
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // SendMessage sends a message to a connection.
