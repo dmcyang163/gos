@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/avast/retry-go"
 	"github.com/panjf2000/ants/v2"
 )
 
@@ -85,14 +84,14 @@ func (e *AntsExecutor) Submit(task TaskFunc) error {
 
 	wrappedTask := func() {
 		start := time.Now()
-		e.logger.Infof("Task %s started", taskName)
+		e.logger.Debugf("Task %s started", taskName)
 		defer func() {
 			if r := recover(); r != nil {
 				e.logger.Errorf("Task %s panic: %v", taskName, r)
 				e.stats.FailedTasks++
 			}
 			e.stats.TaskDuration = time.Since(start)
-			e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
+			e.logger.Debugf("Task %s finished in %v", taskName, e.stats.TaskDuration)
 		}()
 		task()
 	}
@@ -148,29 +147,29 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 	go func() {
 		defer wg.Done()
 		err = e.pool.Submit(func() {
-			select {
-			case <-ctx.Done():
-				e.stats.TimeoutTasks++
-				e.logger.Warnf("Task %s timed out", taskName)
-				return // 任务被取消
-			default:
-				start := time.Now()
-				e.logger.Infof("Task %s started", taskName)
-				defer func() {
-					if r := recover(); r != nil {
-						e.logger.Errorf("Task %s panic: %v", taskName, r)
-						e.stats.FailedTasks++
-					}
-					e.stats.TaskDuration = time.Since(start)
-					e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
-				}()
-				task()
-			}
+			start := time.Now()
+			e.logger.Infof("Task %s started", taskName)
+			defer func() {
+				if r := recover(); r != nil {
+					e.logger.Errorf("Task %s panic: %v", taskName, r)
+					e.stats.FailedTasks++
+				}
+				e.stats.TaskDuration = time.Since(start)
+				e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
+			}()
+			task()
 		})
 	}()
 
-	wg.Wait()
-	return err
+	select {
+	case <-ctx.Done():
+		e.stats.TimeoutTasks++
+		e.logger.Warnf("Task %s timed out", taskName)
+		return ctx.Err()
+	case <-time.After(timeout):
+		wg.Wait()
+		return err
+	}
 }
 
 // SubmitWithRetry 提交带重试的任务到 Goroutine 池
@@ -178,28 +177,28 @@ func (e *AntsExecutor) SubmitWithRetry(task TaskFunc, retries int) error {
 	// 获取任务函数的名称
 	taskName := getFunctionName(task)
 
-	return retry.Do(
-		func() error {
-			return e.pool.Submit(func() {
-				start := time.Now()
-				e.logger.Infof("Task %s started (retry)", taskName)
-				defer func() {
-					if r := recover(); r != nil {
-						e.logger.Errorf("Task %s panic: %v", taskName, r)
-						e.stats.FailedTasks++
-					}
-					e.stats.TaskDuration = time.Since(start)
-					e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
-				}()
-				task()
-			})
-		},
-		retry.Attempts(uint(retries)),
-		retry.DelayType(func(n uint, err error, config *retry.Config) time.Duration {
-			// 指数退避
-			return time.Duration(1<<n) * time.Second
-		}),
-	)
+	var lastErr error
+	for i := 0; i < retries; i++ {
+		err := e.pool.Submit(func() {
+			start := time.Now()
+			e.logger.Infof("Task %s started (retry %d/%d)", taskName, i+1, retries)
+			defer func() {
+				if r := recover(); r != nil {
+					e.logger.Errorf("Task %s panic: %v", taskName, r)
+					e.stats.FailedTasks++
+				}
+				e.stats.TaskDuration = time.Since(start)
+				e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
+			}()
+			task()
+		})
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(time.Duration(1<<i) * time.Second) // 指数退避
+	}
+	return fmt.Errorf("task %s failed after %d retries: %w", taskName, retries, lastErr)
 }
 
 // Resize 动态调整 Goroutine 池的大小

@@ -131,13 +131,22 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 		"address": msg.Address,
 		"file":    msg.FileName,
 		"chunk":   msg.ChunkID,
-		"is_last": msg.IsLast, // 打印 IsLast 字段
+		"is_last": msg.IsLast,
 	}).Info("Received file transfer chunk")
 
 	// 检查连接状态
 	if _, err := conn.Write([]byte{}); err != nil {
 		fmt.Printf("Connection to %s is closed: %v", conn.RemoteAddr().String(), err)
 		n.logger.Errorf("Connection to %s is closed: %v", conn.RemoteAddr().String(), err)
+		return
+	}
+
+	// 计算接收到的文件块的校验和
+	receivedChecksum := calculateChecksum(msg.Chunk)
+	if receivedChecksum != msg.Checksum {
+		n.logger.Errorf("Checksum mismatch for chunk %d of file %s", msg.ChunkID, msg.FileName)
+		// 可以选择重传该文件块或通知发送方
+
 		return
 	}
 

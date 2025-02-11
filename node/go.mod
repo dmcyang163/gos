@@ -3,7 +3,6 @@ module node
 go 1.23.5
 
 require (
-	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/ipfs/go-ipfs-api v0.7.0
