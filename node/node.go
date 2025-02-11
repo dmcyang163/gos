@@ -1,3 +1,4 @@
+// node.go
 package main
 
 import (
@@ -139,7 +140,7 @@ func (n *Node) handleConnection(conn net.Conn) {
 		if err != nil {
 			n.logger.WithFields(map[string]interface{}{
 				"trace_id":    traceID,
-				"error":       err,
+				"error":       err.Error(), // 显式记录错误信息
 				"remote_addr": conn.RemoteAddr().String(),
 			}).Error("Error reading message, closing connection")
 			return
@@ -242,7 +243,7 @@ func (n *Node) BroadcastMessage(message string) error {
 		err := n.executor.Submit(func() {
 			if err := n.net.SendMessage(conn, msg); err != nil {
 				n.logger.WithFields(map[string]interface{}{
-					"error": err,
+					"error": err.Error(), // 显式记录错误信息
 				}).Error("Error sending message")
 			}
 

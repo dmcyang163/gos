@@ -1,3 +1,4 @@
+// network.go
 package main
 
 import (
@@ -5,10 +6,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"node/compressor"
 	"os"
 	"sync"
+	"time"
 )
 
 // NetworkManager handles network connections.
@@ -98,8 +101,17 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	// 压缩消息
 	msgBytes, err := CompressMsg(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("error compressing message: %w", err)
 	}
+
+	// 验证压缩后的数据
+	if len(msgBytes) == 0 {
+		return fmt.Errorf("compressed message is empty")
+	}
+
+	// 记录日志
+	log.Printf("Original message size: %d bytes", len(msg.Data))
+	log.Printf("Compressed message size: %d bytes", len(msgBytes))
 
 	// 使用 SendRawMessage 发送压缩后的消息
 	return nm.SendRawMessage(conn, msgBytes)
@@ -135,9 +147,14 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	// 读取消息长度
 	length, err := nm.readLength(reader)
 	if err != nil {
+		nm.logger.WithFields(map[string]interface{}{
+			"remote_addr": conn.RemoteAddr().String(),
+			"error":       err,
+		}).Error("Failed to read message length")
 		return Message{}, fmt.Errorf("error reading message length: %w", err)
 	}
 
+	// 获取缓冲区
 	buffer, releaseBuffer := nm.getBuffer(nm.readBufferPool, int(length))
 	defer releaseBuffer()
 
@@ -156,13 +173,43 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 }
 
 // readLength reads the length of the message as a 4-byte big-endian integer.
+// readLength reads the length of the message as a 4-byte big-endian integer.
+// It includes retry mechanism and length validation.
 func (nm *NetworkManager) readLength(reader *bufio.Reader) (uint32, error) {
 	lengthBytes := make([]byte, 4)
-	_, err := io.ReadFull(reader, lengthBytes)
-	if err != nil {
-		return 0, err
+	retries := 3                            // 最大重试次数
+	const maxMessageSize = 10 * 1024 * 1024 // 10MB，最大消息长度
+	const minMessageSize = 4                // 最小消息长度（4字节的长度字段）
+
+	for i := 0; i < retries; i++ {
+		// 尝试读取4字节的长度字段
+		_, err := io.ReadFull(reader, lengthBytes)
+		if err != nil {
+			nm.logger.WithFields(map[string]interface{}{
+				"retry": i + 1,
+				"error": err,
+			}).Warn("Failed to read length bytes, retrying...")
+			time.Sleep(100 * time.Millisecond) // 等待100ms后重试
+			continue
+		}
+
+		// 解析长度值
+		length := binary.BigEndian.Uint32(lengthBytes)
+
+		// 校验长度值
+		if length < minMessageSize {
+			return 0, fmt.Errorf("invalid message length: %d (too small)", length)
+		}
+		if length > maxMessageSize {
+			return 0, fmt.Errorf("invalid message length: %d (exceeds max limit)", length)
+		}
+
+		// 返回有效的长度值
+		return length, nil
 	}
-	return binary.BigEndian.Uint32(lengthBytes), nil
+
+	// 重试次数用尽，返回错误
+	return 0, fmt.Errorf("failed to read length after %d retries", retries)
 }
 
 // GetConns returns a list of active connections.
