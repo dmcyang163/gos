@@ -95,8 +95,12 @@ func (hook *AsyncHook) Levels() []logrus.Level {
 func (hook *AsyncHook) processLogs() {
 	defer hook.wg.Done()
 	for entry := range hook.logChan {
-		// 在这里实现日志的异步写入逻辑
-		// 例如：写入文件、发送到远程服务器等
+		// 检查日志级别
+		if entry.Level == logrus.ErrorLevel {
+			sendAlert(entry.Message) // 发送告警
+		}
+
+		// 写入日志
 		data, err := entry.Logger.Formatter.Format(entry)
 		if err != nil {
 			fmt.Printf("Failed to format log entry: %v\n", err)
@@ -106,6 +110,11 @@ func (hook *AsyncHook) processLogs() {
 			fmt.Printf("Failed to write log entry: %v\n", err)
 		}
 	}
+}
+
+func sendAlert(message string) {
+	// 实现告警逻辑，例如发送邮件或调用 Webhook
+	fmt.Printf("ALERT: %s\n", message)
 }
 
 // Close 关闭 Hook，等待所有日志处理完成
