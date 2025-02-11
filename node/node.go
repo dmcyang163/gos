@@ -228,7 +228,7 @@ func (n *Node) startHeartbeat() {
 }
 
 // BroadcastMessage broadcasts a message to all connected peers.
-func (n *Node) BroadcastMessage(message string) {
+func (n *Node) BroadcastMessage(message string) error {
 	msg := Message{
 		Type:    MessageTypeChat,
 		Data:    message,
@@ -245,13 +245,17 @@ func (n *Node) BroadcastMessage(message string) {
 					"error": err,
 				}).Error("Error sending message")
 			}
+
 		})
 		if err != nil {
 			n.logger.WithFields(map[string]interface{}{
 				"error": err,
 			}).Error("Failed to submit broadcast task to executor")
+
+			return err
 		}
 	}
+	return nil
 }
 
 // SendDir sends all files in a directory to a peer.
