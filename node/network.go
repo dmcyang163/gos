@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"node/compressor"
+	"node/utils"
 	"os"
 	"sync"
 	"time"
@@ -28,8 +28,8 @@ type NetworkManager struct {
 func NewNetworkManager(logger Logger, executor TaskExecutor) *NetworkManager {
 	return &NetworkManager{
 		Conns:          sync.Map{},
-		sendBufferPool: compressor.NewBufferPool(),
-		readBufferPool: compressor.NewBufferPool(),
+		sendBufferPool: utils.NewBufferPool(),
+		readBufferPool: utils.NewBufferPool(),
 		logger:         logger,
 		executor:       executor,
 	}

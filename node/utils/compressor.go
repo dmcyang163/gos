@@ -1,4 +1,4 @@
-package compressor
+package utils
 
 import (
 	"sync"

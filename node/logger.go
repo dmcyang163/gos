@@ -123,7 +123,7 @@ func NewLogrusLogger(config *Config) Logger {
 	logFile.MaxAge = config.Log.MaxAge
 	logFile.Compress = config.Log.Compress
 
-	// 设置日志输出
+	// 设置日志输出：控制台 + 文件
 	logger.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
 	// 使用自定义的 OrderedJSONFormatter
@@ -162,6 +162,46 @@ func NewLogrusLogger(config *Config) Logger {
 	return &LogrusLogger{entry: entry}
 }
 
+// NewChatLogger 创建一个新的聊天日志实例
+func NewChatLogger(config *Config) Logger {
+	logger := logrus.New()
+
+	// 配置聊天日志轮转
+	chatLogFile := &lumberjack.Logger{
+		Filename:   "log/chat.log", // 聊天日志文件名
+		MaxSize:    config.Log.MaxSize,
+		MaxBackups: config.Log.MaxBackups,
+		MaxAge:     config.Log.MaxAge,
+		Compress:   config.Log.Compress,
+	}
+
+	// 设置日志输出：仅文件
+	logger.SetOutput(chatLogFile)
+
+	// 使用自定义的 OrderedJSONFormatter
+	logger.SetFormatter(&OrderedJSONFormatter{
+		JSONFormatter: logrus.JSONFormatter{
+			TimestampFormat: "2006-01-02 15:04:05",
+		},
+	})
+
+	// 设置日志级别
+	logger.SetLevel(logrus.InfoLevel) // 聊天日志固定为 Info 级别
+
+	// 添加异步 Hook
+	asyncHook := NewAsyncHook(1000) // 缓冲区大小为 1000
+	logger.AddHook(asyncHook)
+
+	// 在程序退出时关闭 Hook
+	go func() {
+		<-make(chan struct{}) // 阻塞，直到程序退出
+		asyncHook.Close()
+	}()
+
+	// 将 *logrus.Logger 转换为 *logrus.Entry
+	entry := logrus.NewEntry(logger)
+	return &LogrusLogger{entry: entry}
+}
 func (l *LogrusLogger) Debugf(format string, args ...interface{}) {
 	l.entry.Debugf(format, args...)
 }

@@ -5,7 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"node/compressor"
+	"node/utils"
 )
 
 // MessageType 定义消息类型
@@ -23,11 +23,12 @@ const (
 
 // Message represents a message exchanged between nodes.
 type Message struct {
-	Type    string `json:"type"`    // 消息类型
-	Data    string `json:"data"`    // 消息内容
-	Sender  string `json:"sender"`  // 发送者名字
-	Address string `json:"address"` // 发送者地址
-	ID      string `json:"id"`      // 消息ID，用于防止重复处理
+	Type      string `json:"type"`                // 消息类型
+	Data      string `json:"data"`                // 消息内容
+	Sender    string `json:"sender"`              // 发送者名字
+	Address   string `json:"address"`             // 发送者地址
+	ID        string `json:"id"`                  // 消息ID，用于防止重复处理
+	Encrypted bool   `json:"encrypted,omitempty"` // 标识消息是否已加密
 
 	// 文件传输相关字段
 	FileName string `json:"file_name,omitempty"` // 文件名
@@ -81,7 +82,7 @@ func CompressMsg(msg Message) ([]byte, error) {
 	}
 
 	// 调用 compression.go 中的 compress 函数
-	compressed, err := compressor.Compress(data)
+	compressed, err := utils.Compress(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress message: %w", err)
 	}
@@ -92,7 +93,7 @@ func CompressMsg(msg Message) ([]byte, error) {
 
 func DecompressMsg(data []byte) (Message, error) {
 	// 尝试解压缩数据
-	decoded, err := compressor.Decompress(data)
+	decoded, err := utils.Decompress(data)
 	if err == nil {
 		// 如果解压缩成功，则解码解压缩后的消息
 		return decodeMessage(decoded)

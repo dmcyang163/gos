@@ -11,13 +11,16 @@ import (
 	"sync"
 	"time"
 
+	"node/utils"
+
 	"github.com/google/uuid"
 )
 
 // Node represents a peer in the P2P network.
 type Node struct {
 	Port          string
-	logger        Logger
+	logger        Logger // 系统日志
+	chatLogger    Logger // 聊天日志
 	config        *Config
 	User          *User
 	processedMsgs sync.Map
@@ -30,6 +33,8 @@ type Node struct {
 
 // NewNode creates a new Node instance.
 func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExecutor) *Node {
+	// 初始化聊天日志
+	chatLogger := NewChatLogger(config)
 	// 随机选择一个名字
 	entry := names[rand.Intn(len(names))]
 	name := fmt.Sprintf("%s·%s", entry.Name, config.Port)
@@ -57,7 +62,8 @@ func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExec
 
 	return &Node{
 		Port:          config.Port,
-		logger:        logger,
+		logger:        logger,     // 系统日志
+		chatLogger:    chatLogger, // 聊天日志
 		config:        config,
 		User:          user,
 		processedMsgs: sync.Map{},
@@ -243,12 +249,20 @@ func (n *Node) startHeartbeat() {
 
 // BroadcastMessage broadcasts a message to all connected peers.
 func (n *Node) BroadcastMessage(message string) error {
+	encryptedMessage, err := utils.Encrypt(message)
+	if err != nil {
+		n.logger.WithFields(map[string]interface{}{
+			"error": err.Error(), // 显式记录错误信息
+		}).Error("Failed to encrypt message")
+		return err
+	}
 	msg := Message{
-		Type:    MessageTypeChat,
-		Data:    message,
-		Sender:  n.User.Name,
-		Address: ":" + n.Port,
-		ID:      generateMessageID(), // 调用 generateMessageID 函数
+		Type:      MessageTypeChat,
+		Data:      encryptedMessage,
+		Sender:    n.User.Name,
+		Address:   ":" + n.Port,
+		ID:        generateMessageID(),
+		Encrypted: true, // 标记消息已加密
 	}
 
 	conns := n.net.GetConns()

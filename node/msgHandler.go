@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"node/utils"
+
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -82,23 +84,42 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 			return
 		}
 
-		// 记录收到的聊天消息
-		n.logger.WithFields(logrus.Fields{
-			"sender":  msg.Sender,
-			"address": msg.Address,
-			"message": msg.Data,
-		}).Info("Received chat message")
+		// 解密接收到的消息
+		if msg.Encrypted {
+			decryptedData, err := utils.Decrypt(msg.Data)
+			if err != nil {
+				n.logger.WithError(err).Error("Failed to decrypt message")
+				return
+			}
+			msg.Data = decryptedData
+		}
+
+		// 记录聊天消息到独立的日志文件
+		n.chatLogger.WithFields(logrus.Fields{
+			"timestamp": time.Now().Format(time.RFC3339),
+			"sender":    msg.Sender,
+			"address":   msg.Address,
+			"message":   msg.Data,
+		}).Info("Chat message")
 
 		// 彩色显示接收到的消息
 		color.Cyan("%s: %s\n", msg.Sender, msg.Data)
 
 		if shouldReplyToMessage(msg) {
 			dialogue := n.findDialogueForSender(msg.Sender)
+
+			// 加密回复消息
+			encryptedDialogue, err := utils.Encrypt(string(dialogue))
+			if err != nil {
+				n.logger.WithError(err).Error("Failed to encrypt reply message")
+				return
+			}
+
 			n.logger.WithFields(logrus.Fields{
 				"reply": dialogue,
 			}).Info("Sending reply")
 
-			sendMessage(n, conn, MessageTypeChat, string(dialogue))
+			sendMessage(n, conn, MessageTypeChat, encryptedDialogue)
 		}
 	}()
 }
