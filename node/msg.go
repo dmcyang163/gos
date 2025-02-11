@@ -10,13 +10,15 @@ import (
 
 // MessageType 定义消息类型
 const (
-	MessageTypeChat         = "chat"
-	MessageTypePeerList     = "peer_list"
-	MessageTypePeerListReq  = "peer_list_request"
-	MessageTypePing         = "ping" // 心跳请求
-	MessageTypePong         = "pong" // 心跳响应
-	MessageTypeFileTransfer = "file_transfer"
-	MessageTypeNodeStatus   = "node_status"
+	MessageTypeChat            = "chat"
+	MessageTypePeerList        = "peer_list"
+	MessageTypePeerListReq     = "peer_list_request"
+	MessageTypePing            = "ping" // 心跳请求
+	MessageTypePong            = "pong" // 心跳响应
+	MessageTypeFileTransfer    = "file_transfer"
+	MessageTypeFileTransferAck = "file_transfer_ack" // 文件传输确认
+	MessageTypeFileTransferNak = "file_transfer_nak" // 文件传输否定确认
+	MessageTypeNodeStatus      = "node_status"
 )
 
 // Message represents a message exchanged between nodes.
@@ -33,6 +35,18 @@ type Message struct {
 	Chunk    []byte `json:"chunk,omitempty"`     // 文件块数据
 	ChunkID  int    `json:"chunk_id,omitempty"`  // 文件块ID
 	IsLast   bool   `json:"is_last,omitempty"`   // 是否是最后一块
+	Checksum string `json:"checksum,omitempty"`  // 校验和
+}
+
+// 定义不需要压缩的消息类型
+var uncompressedMessageTypes = map[string]bool{
+	MessageTypePing:        true,
+	MessageTypePong:        true,
+	MessageTypePeerListReq: true,
+}
+
+func shouldCompressMessage(msgType string) bool {
+	return !uncompressedMessageTypes[msgType]
 }
 
 func CompressMsg(msg Message) ([]byte, error) {
@@ -43,7 +57,7 @@ func CompressMsg(msg Message) ([]byte, error) {
 	}
 
 	// 对于小消息或不需要压缩的消息类型，直接返回原始数据
-	if msg.Type == MessageTypePing || msg.Type == MessageTypePong || msg.Type == MessageTypePeerListReq {
+	if !shouldCompressMessage(msg.Type) {
 		return data, nil
 	}
 
