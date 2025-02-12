@@ -32,11 +32,12 @@ type MessageHandler interface {
 
 func sendMessage(n *Node, conn net.Conn, msgType string, data string) {
 	n.net.SendMessage(conn, Message{
-		Type:    msgType,
-		Data:    data,
-		Sender:  n.User.Name,
-		Address: ":" + n.Port,
-		ID:      generateMessageID(),
+		Type:      msgType,
+		Data:      data,
+		Sender:    n.User.Name,
+		Address:   ":" + n.Port,
+		Encrypted: true,
+		ID:        generateMessageID(),
 	})
 }
 

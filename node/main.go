@@ -78,7 +78,7 @@ func main() {
 			time.Sleep(5 * time.Second)
 
 			// 发送文件
-			filePath := "D:/young/gos/node/123/222222.dll" // 要发送的文件路径
+			filePath := "D:/young/gos/node/test-data/111111.dll" // 要发送的文件路径
 			if err := node.SendDir("127.0.0.1:1234", filePath); err != nil {
 				logger.Errorf("Failed to send file: %v", err)
 			} else {

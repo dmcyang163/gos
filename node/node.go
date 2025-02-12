@@ -152,8 +152,8 @@ func (n *Node) handleConnection(conn net.Conn) {
 				"trace_id":    traceID,
 				"error":       err.Error(), // 显式记录错误信息
 				"remote_addr": conn.RemoteAddr().String(),
-			}).Error("Error reading message, closing connection")
-			return
+			}).Error("Error reading message!")
+			continue
 		}
 
 		n.handleMessageWithExecutor(conn, msg)

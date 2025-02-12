@@ -247,7 +247,6 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 }
 
 // readLength reads the length of the message as a 4-byte big-endian integer.
-// readLength reads the length of the message as a 4-byte big-endian integer.
 // It includes retry mechanism and length validation.
 func (nm *NetworkManager) readLength(reader *bufio.Reader) (uint32, error) {
 	lengthBytes := make([]byte, 4)
