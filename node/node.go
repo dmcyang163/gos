@@ -1,17 +1,15 @@
-// node.go
 package main
 
 import (
 	"fmt"
 	"math/rand"
 	"net"
+	"node/utils"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-
-	"node/utils"
 
 	"github.com/google/uuid"
 )
@@ -22,7 +20,7 @@ type Node struct {
 	logger        Logger // 系统日志
 	chatLogger    Logger // 聊天日志
 	config        *Config
-	User          *User
+	User          *User // 用户信息
 	processedMsgs sync.Map
 	namesMap      map[string]NameEntry
 	net           *NetworkManager
@@ -33,8 +31,6 @@ type Node struct {
 
 // NewNode creates a new Node instance.
 func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExecutor) *Node {
-	// 初始化聊天日志
-	chatLogger := NewChatLogger(config)
 	// 随机选择一个名字
 	entry := names[rand.Intn(len(names))]
 	name := fmt.Sprintf("%s·%s", entry.Name, config.Port)
@@ -62,8 +58,8 @@ func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExec
 
 	return &Node{
 		Port:          config.Port,
-		logger:        logger,     // 系统日志
-		chatLogger:    chatLogger, // 聊天日志
+		logger:        logger,                // 系统日志
+		chatLogger:    NewChatLogger(config), // 聊天日志
 		config:        config,
 		User:          user,
 		processedMsgs: sync.Map{},
@@ -229,7 +225,13 @@ func (n *Node) startHeartbeat() {
 		conns := n.net.GetConns()
 		for _, conn := range conns {
 			err := n.executor.Submit(func() {
-				msg := Message{Type: MessageTypePing, Data: "", Sender: n.User.Name, Address: ":" + n.Port, ID: generateMessageID()} // 调用 generateMessageID 函数
+				msg := Message{
+					Type:    MessageTypePing,
+					Data:    "",
+					Sender:  n.User.Name,
+					Address: ":" + n.Port,
+					ID:      generateMessageID(),
+				}
 				if err := n.net.SendMessage(conn, msg); err != nil {
 					n.logger.WithFields(map[string]interface{}{
 						"error": err,
@@ -273,13 +275,11 @@ func (n *Node) BroadcastMessage(message string) error {
 					"error": err.Error(), // 显式记录错误信息
 				}).Error("Error sending message")
 			}
-
 		})
 		if err != nil {
 			n.logger.WithFields(map[string]interface{}{
 				"error": err,
 			}).Error("Failed to submit broadcast task to executor")
-
 			return err
 		}
 	}

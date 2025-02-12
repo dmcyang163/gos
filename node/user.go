@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -17,9 +18,10 @@ type User struct {
 	Tone           string   `json:"tone"`
 	Dialogues      []string `json:"dialogues"`
 
-	Password    string `json:"password"` // 新增密码字段
-	IsOnline    bool   `json:"is_online"`
-	IsInvisible bool   `json:"is_invisible"`
+	Password    string `json:"password"`     // 密码字段
+	IsOnline    bool   `json:"is_online"`    // 是否在线
+	IsInvisible bool   `json:"is_invisible"` // 是否隐身
+	LastSeen    int64  `json:"last_seen"`    // 最后活跃时间
 }
 
 // NewUser creates a new User instance with a unique UUID.
@@ -32,7 +34,27 @@ func NewUser(name, description, specialAbility, tone string, dialogues []string)
 		SpecialAbility: specialAbility,
 		Tone:           tone,
 		Dialogues:      dialogues,
+		IsOnline:       false,
+		IsInvisible:    false,
+		LastSeen:       time.Now().Unix(),
 	}
+}
+
+// Login 用户登录
+func (u *User) Login(password string) error {
+	if u.Password != password {
+		return fmt.Errorf("invalid password")
+	}
+
+	u.IsOnline = true
+	u.LastSeen = time.Now().Unix()
+	return nil
+}
+
+// Logout 用户登出
+func (u *User) Logout() {
+	u.IsOnline = false
+	u.LastSeen = time.Now().Unix()
 }
 
 // SaveUser saves the user information to a file.
