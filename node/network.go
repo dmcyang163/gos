@@ -170,20 +170,6 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	return nm.SendRawMessage(conn, msgBytes)
 }
 
-// SendRawMessage sends raw bytes to a connection without additional copying.
-// func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
-// 	// 发送消息长度
-// 	if err := nm.writeLength(conn, uint32(len(data))); err != nil {
-// 		return fmt.Errorf("error sending message length: %w", err)
-// 	}
-
-// 	// 直接发送消息体
-// 	if _, err := conn.Write(data); err != nil {
-// 		return fmt.Errorf("error sending message body: %w", err)
-// 	}
-
-//		return nil
-//	}
 func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
 	// 从内存池获取长度头缓冲区（复用4字节内存）
 	headerBuf, release := nm.getBuffer(nm.sendBufferPool, 4)
