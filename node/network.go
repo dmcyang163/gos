@@ -185,21 +185,17 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 //		return nil
 //	}
 func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
-	// 获取缓冲区（复用池中资源）
-	buffer, release := nm.getBuffer(nm.sendBufferPool, 4+len(data))
+	// 从内存池获取长度头缓冲区（复用4字节内存）
+	headerBuf, release := nm.getBuffer(nm.sendBufferPool, 4)
 	defer release()
 
-	// 写入消息长度（前4字节）
-	binary.BigEndian.PutUint32(buffer[:4], uint32(len(data)))
+	// 构造零拷贝写入方案
+	binary.BigEndian.PutUint32(headerBuf[:4], uint32(len(data)))
+	buffers := net.Buffers{headerBuf[:4], data} // 组合两个内存块
 
-	// 写入消息体（零拷贝）
-	copy(buffer[4:], data)
-
-	// 单次系统调用发送完整数据
-	if _, err := conn.Write(buffer[:4+len(data)]); err != nil {
-		return fmt.Errorf("error sending message: %w", err)
-	}
-	return nil
+	// 单次系统调用发送（使用writev系统调用（Linux）或WSASend（Windows））
+	_, err := buffers.WriteTo(conn)
+	return err
 }
 
 // ReadMessage reads a message from the connection.
