@@ -170,22 +170,12 @@ func max(a, b int) int {
 
 // SendMessage sends a message to a connection.
 func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
-	// 压缩消息
-	//msgBytes, err := CompressMessage(msg)
+	// 打包消息
 	msgBytes, err := PackMessage(msg)
 	if err != nil {
 		return fmt.Errorf("error packing message: %w", err)
 	}
-	/*
-		if err != nil {
-			return fmt.Errorf("error compressing message: %w", err)
-		}
 
-		// 验证压缩后的数据
-		if len(msgBytes) == 0 {
-			return fmt.Errorf("compressed message is empty")
-		}
-	*/
 	// 记录日志
 	nm.logger.WithFields(map[string]interface{}{
 		"original_size":   len(msg.Data),
@@ -242,17 +232,12 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 		return Message{}, fmt.Errorf("error reading message body: %w", err)
 	}
 
-	// 解压消息
-	//msg, err := DecompressMessage(buffer)
+	// 打包消息
 	msg, err := UnpackMessage(buffer)
 	if err != nil {
 		return Message{}, fmt.Errorf("error unpacking message: %w", err)
 	}
-	/*
-		if err != nil {
-			return Message{}, fmt.Errorf("error decompressing message: %w", err)
-		}
-	*/
+
 	return msg, nil
 }
 

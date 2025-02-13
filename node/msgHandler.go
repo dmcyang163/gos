@@ -34,8 +34,7 @@ func sendMessage(n *Node, conn net.Conn, msgType string, data string) {
 		Data:    data,
 		Sender:  n.User.Name,
 		Address: ":" + n.Port,
-		//Encrypted: true,
-		ID: generateMessageID(),
+		ID:      generateMessageID(),
 	})
 }
 
@@ -83,16 +82,6 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 			return
 		}
 
-		// 解密接收到的消息
-		// if msg.Encrypted {
-		// 	decryptedData, err := utils.Decrypt(msg.Data)
-		// 	if err != nil {
-		// 		n.logger.WithError(err).Error("Failed to decrypt message")
-		// 		return
-		// 	}
-		// 	msg.Data = decryptedData
-		// }
-
 		// 记录聊天消息到独立的日志文件
 		n.chatLogger.WithFields(logrus.Fields{
 			"timestamp": time.Now().Format(time.RFC3339),
@@ -106,14 +95,6 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 
 		if shouldReplyToMessage(msg) {
 			dialogue := n.findDialogueForSender(msg.Sender)
-
-			// 加密回复消息
-			// encryptedDialogue, err := utils.Encrypt(string(dialogue))
-			// if err != nil {
-			// 	n.logger.WithError(err).Error("Failed to encrypt reply message")
-			// 	return
-			// }
-
 			n.logger.WithFields(logrus.Fields{
 				"reply": dialogue,
 			}).Info("Sending reply")

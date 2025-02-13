@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"node/utils"
@@ -21,12 +22,11 @@ const (
 
 // Message represents a message exchanged between nodes.
 type Message struct {
-	Type      string `json:"type"`                // 消息类型
-	Data      string `json:"data"`                // 消息内容
-	Sender    string `json:"sender"`              // 发送者名字
-	Address   string `json:"address"`             // 发送者地址
-	ID        string `json:"id"`                  // 消息ID，用于防止重复处理
-	Encrypted bool   `json:"encrypted,omitempty"` // 标识消息是否已加密
+	Type    string `json:"type"`    // 消息类型
+	Data    string `json:"data"`    // 消息内容
+	Sender  string `json:"sender"`  // 发送者名字
+	Address string `json:"address"` // 发送者地址
+	ID      string `json:"id"`      // 消息ID，用于防止重复处理
 
 	// 文件传输相关字段
 	FileName string `json:"file_name,omitempty"` // 文件名
@@ -119,63 +119,124 @@ func DecompressMessage(data []byte) (Message, error) {
 	return decodeMessage(data)
 }
 
-// PackMessage 打包消息，先压缩再加密
 func PackMessage(msg Message) ([]byte, error) {
-	// 压缩消息
-	compressedData, err := CompressMessage(msg)
+	// 将消息序列化为 JSON
+	data, err := json.Marshal(msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compress message: %w", err)
+		return nil, fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	// 如果需要加密，则加密压缩后的数据
-	if shouldEncryptMessage(msg.Type) {
-		encryptedData, err := utils.Encrypt(compressedData) // 直接传入 []byte
+	// 根据消息类型生成前缀
+	prefix := getMessagePrefix(msg.Type)
+
+	// 根据前缀处理数据
+	switch prefix {
+	case "N|": // 未压缩未加密
+		return append([]byte(prefix), data...), nil
+	case "C|": // 压缩未加密
+		compressed, err := utils.Compress(data)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt message: %w", err)
+			return nil, fmt.Errorf("failed to compress: %w", err)
 		}
-		return []byte(encryptedData), nil // 将 Base64 字符串转换为 []byte
+		return append([]byte(prefix), compressed...), nil
+	case "E|": // 未压缩加密
+		encrypted, err := utils.Encrypt(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt: %w", err)
+		}
+		return append([]byte(prefix), encrypted...), nil
+	case "CE|": // 压缩加密
+		compressed, err := utils.Compress(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compress: %w", err)
+		}
+		encrypted, err := utils.Encrypt(compressed)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt: %w", err)
+		}
+		return append([]byte(prefix), encrypted...), nil
+	default:
+		return nil, fmt.Errorf("unknown prefix: %s", prefix)
 	}
-
-	// 如果不需要加密，直接返回压缩后的数据
-	return compressedData, nil
 }
 
-// UnpackMessage 解包消息，处理多种情况（压缩、加密、压缩加密、未压缩未加密）
+func getMessagePrefix(messageType string) string {
+	compressed := shouldCompressMessage(messageType)
+	encrypted := shouldEncryptMessage(messageType)
+
+	switch {
+	case compressed && encrypted:
+		return "CE|" // 压缩加密
+	case compressed && !encrypted:
+		return "C|" // 压缩未加密
+	case !compressed && encrypted:
+		return "E|" // 未压缩加密
+	default:
+		return "N|" // 未压缩未加密
+	}
+}
+
+// parsePrefix 从消息中解析前缀，并返回前缀和剩余数据
+func parsePrefix(data []byte) (string, []byte, error) {
+	separatorIndex := bytes.IndexByte(data, '|')
+	if separatorIndex == -1 {
+		return "", nil, fmt.Errorf("invalid message format: missing separator '|'")
+	}
+
+	prefix := string(data[:separatorIndex+1]) // 包含分隔符
+	remainingData := data[separatorIndex+1:]  // 移除前缀和分隔符
+
+	return prefix, remainingData, nil
+}
+
 func UnpackMessage(data []byte) (Message, error) {
 	var msg Message
 
-	// 尝试直接解析原始数据（未压缩未加密的情况）
-	if err := json.Unmarshal(data, &msg); err == nil {
+	// 解析前缀
+	prefix, remainingData, err := parsePrefix(data)
+	if err != nil {
+		return Message{}, fmt.Errorf("failed to parse prefix: %w", err)
+	}
+
+	// 根据前缀处理数据
+	switch prefix {
+	case "N|": // 未压缩未加密
+		if err := json.Unmarshal(remainingData, &msg); err != nil {
+			return Message{}, fmt.Errorf("failed to unmarshal message: %w", err)
+		}
 		return msg, nil
-	}
-
-	// 尝试解压缩（压缩未加密的情况）
-	decompressedData, err := utils.Decompress(data)
-	if err == nil {
-		if err := json.Unmarshal(decompressedData, &msg); err == nil {
-			return msg, nil
+	case "C|": // 压缩未加密
+		decompressed, err := utils.Decompress(remainingData)
+		if err != nil {
+			return Message{}, fmt.Errorf("failed to decompress: %w", err)
 		}
-	}
-
-	// 尝试解密（未压缩加密的情况）
-	decryptedData, err := utils.Decrypt(string(data))
-	if err == nil {
-		if err := json.Unmarshal([]byte(decryptedData), &msg); err == nil {
-			return msg, nil
+		if err := json.Unmarshal(decompressed, &msg); err != nil {
+			return Message{}, fmt.Errorf("failed to unmarshal message: %w", err)
 		}
-	}
-
-	// 尝试解密并解压缩（压缩加密的情况）
-	decryptedData, err = utils.Decrypt(string(data))
-	if err == nil {
-		decompressedData, err := utils.Decompress([]byte(decryptedData))
-		if err == nil {
-			if err := json.Unmarshal(decompressedData, &msg); err == nil {
-				return msg, nil
-			}
+		return msg, nil
+	case "E|": // 未压缩加密
+		decrypted, err := utils.Decrypt(string(remainingData))
+		if err != nil {
+			return Message{}, fmt.Errorf("failed to decrypt: %w", err)
 		}
+		if err := json.Unmarshal(decrypted, &msg); err != nil {
+			return Message{}, fmt.Errorf("failed to unmarshal message: %w", err)
+		}
+		return msg, nil
+	case "CE|": // 压缩加密
+		decrypted, err := utils.Decrypt(string(remainingData))
+		if err != nil {
+			return Message{}, fmt.Errorf("failed to decrypt: %w", err)
+		}
+		decompressed, err := utils.Decompress(decrypted)
+		if err != nil {
+			return Message{}, fmt.Errorf("failed to decompress: %w", err)
+		}
+		if err := json.Unmarshal(decompressed, &msg); err != nil {
+			return Message{}, fmt.Errorf("failed to unmarshal message: %w", err)
+		}
+		return msg, nil
+	default:
+		return Message{}, fmt.Errorf("unknown message prefix: %s", prefix)
 	}
-
-	// 如果所有尝试都失败，返回错误
-	return Message{}, fmt.Errorf("failed to unpack message: unknown format")
 }

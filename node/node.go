@@ -250,21 +250,13 @@ func (n *Node) startHeartbeat() {
 
 // BroadcastMessage broadcasts a message to all connected peers.
 func (n *Node) BroadcastMessage(message string) error {
-	/*
-		encryptedMessage, err := utils.Encrypt(message)
-		if err != nil {
-			n.logger.WithFields(map[string]interface{}{
-				"error": err.Error(), // 显式记录错误信息
-			}).Error("Failed to encrypt message")
-			return err
-		}*/
+
 	msg := Message{
 		Type:    MessageTypeChat,
 		Data:    message,
 		Sender:  n.User.Name,
 		Address: ":" + n.Port,
 		ID:      generateMessageID(),
-		//Encrypted: true, // 标记消息已加密
 	}
 
 	conns := n.net.GetConns()
