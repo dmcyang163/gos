@@ -5,10 +5,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/patrickmn/go-cache"
 )
 
 // Node represents a peer in the P2P network.
@@ -17,8 +17,8 @@ type Node struct {
 	logger        Logger // 系统日志
 	chatLogger    Logger // 聊天日志
 	config        *Config
-	User          *User // 用户信息
-	processedMsgs sync.Map
+	User          *User        // 用户信息
+	processedMsgs *cache.Cache // 使用 go-cache 存储已处理的消息 ID
 	net           *NetworkManager
 	peers         *PeerManager
 	router        *MessageRouter
@@ -38,12 +38,13 @@ func NewNode(config *Config, logger Logger, executor TaskExecutor) *Node {
 	peerManager := NewPeerManager(logger, executor)
 
 	return &Node{
-		Port:          config.Port,
-		logger:        logger,                // 系统日志
-		chatLogger:    NewChatLogger(config), // 聊天日志
-		config:        config,
-		User:          user,
-		processedMsgs: sync.Map{},
+		Port:       config.Port,
+		logger:     logger,                // 系统日志
+		chatLogger: NewChatLogger(config), // 聊天日志
+		config:     config,
+		User:       user,
+
+		processedMsgs: cache.New(5*time.Minute, 10*time.Minute), // 初始化 processedMsgs，设置默认过期时间为 5 分钟，清理间隔为 10 分钟
 		net:           netManager,
 		peers:         peerManager,
 		router:        router,
@@ -65,7 +66,6 @@ func (n *Node) startServer() {
 
 	// 提取 NameEntry 变量
 	nameEntry := n.User.namesMap[n.User.Name]
-	// 使用 WithFields 记录日志
 	n.logger.WithFields(map[string]interface{}{
 		"port":            n.Port,
 		"name":            nameEntry.Name,
@@ -129,13 +129,15 @@ func (n *Node) handleConnection(conn net.Conn) {
 
 		n.handleMessageWithExecutor(conn, msg)
 
-		if _, loaded := n.processedMsgs.LoadOrStore(msg.ID, struct{}{}); loaded {
+		// 检查消息是否已经处理过
+		if _, found := n.processedMsgs.Get(msg.ID); found {
 			n.logger.WithFields(map[string]interface{}{
 				"trace_id":   traceID,
 				"message_id": msg.ID,
 			}).Debug("Message already processed")
 			continue
 		}
+		n.processedMsgs.Set(msg.ID, true, 5*time.Minute)
 	}
 }
 
