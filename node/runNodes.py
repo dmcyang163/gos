@@ -1,7 +1,6 @@
 import json
 import subprocess
 import time
-import os
 import sys
 from colorama import Fore, Style, init
 
@@ -34,48 +33,32 @@ def load_config(config_file):
     except json.JSONDecodeError as e:
         handle_error("Error decoding config file", e)
 
-def write_temp_config(node_config):
-    """
-    将节点配置写入临时文件
-    :param node_config: 节点配置
-    :return: 临时配置文件路径或 None
-    """
-    node_id = node_config.get("id", "unknown")
-    temp_config_file = f"temp_config_{node_id}.json"
-    try:
-        with open(temp_config_file, "w") as f:
-            json.dump(node_config, f, indent=4)
-        return temp_config_file
-    except Exception as e:
-        handle_error("Error writing temporary config file", e)
-        return None
-
-def start_node_process(temp_config_file):
+def start_node_process(config_file):
     """
     启动节点进程
-    :param temp_config_file: 临时配置文件路径
+    :param config_file: 配置文件路径
     :return: 进程对象或 None
     """
     try:
         if sys.platform == "win32":
             # Windows 使用 start 命令打开新终端
-            command = f'start cmd /k go run . -c {temp_config_file}'
+            command = f'start cmd /k go run . -c {config_file}'
             process = subprocess.Popen(command, shell=True)
         elif sys.platform == "linux":
             # 检查 gnome-terminal 是否存在
             if os.system("which gnome-terminal") == 0:
-                command = f'gnome-terminal -- bash -c \'go run . -c {temp_config_file}; exec bash\''
+                command = f'gnome-terminal -- bash -c \'go run . -c {config_file}; exec bash\''
             elif os.system("which xterm") == 0:
-                command = f'xterm -e "go run . -c {temp_config_file}"'
+                command = f'xterm -e "go run . -c {config_file}"'
             elif os.system("which konsole") == 0:
-                command = f'konsole -e "go run . -c {temp_config_file}"'
+                command = f'konsole -e "go run . -c {config_file}"'
             else:
                 # 如果没有找到终端，直接在后台运行
-                command = f'go run . -c {temp_config_file}'
+                command = f'go run . -c {config_file}'
             process = subprocess.Popen(command, shell=True)
         elif sys.platform == "darwin":
             # Mac 使用 osascript 打开新终端
-            command = f'osascript -e \'tell app "Terminal" to do script "go run . -c {temp_config_file}"\''
+            command = f'osascript -e \'tell app "Terminal" to do script "go run . -c {config_file}"\''
             process = subprocess.Popen(command, shell=True)
         else:
             handle_error(f"Unsupported operating system: {sys.platform}")
@@ -85,29 +68,25 @@ def start_node_process(temp_config_file):
         handle_error("Error starting node", e)
         return None
 
-def start_node(node_config):
+def start_node(config_file):
     """
     启动一个节点
-    :param node_config: 节点配置
-    :return: (进程对象, 临时配置文件路径)
+    :param config_file: 配置文件路径
+    :return: 进程对象
     """
-    node_id = node_config.get("id", "unknown")
+    config = load_config(config_file)
+    node_id = config.get("id", "unknown")
     print(f"{Fore.GREEN}Starting node {node_id} with config:{Style.RESET_ALL}")
-    # 使用 json.dumps 将 JSON 显示为美化格式
-    print(json.dumps(node_config, indent=4))
+    print(json.dumps(config, indent=4))
 
-    temp_config_file = write_temp_config(node_config)
-    if not temp_config_file:
-        return None, None
-
-    process = start_node_process(temp_config_file)
+    process = start_node_process(config_file)
     if not process:
-        return None, None
+        return None
 
     # 启动节点后延迟 1 秒
     time.sleep(1)
 
-    return process, temp_config_file
+    return process
 
 def stop_nodes(processes):
     """
@@ -123,42 +102,20 @@ def stop_nodes(processes):
             handle_error(f"Error stopping process", e)
     print(f"{Fore.GREEN}All nodes stopped.{Style.RESET_ALL}")
 
-def clean_temp_files(temp_files):
-    """
-    清理临时配置文件
-    :param temp_files: 临时文件列表
-    """
-    for temp_file in temp_files:
-        try:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-                print(f"{Fore.BLUE}Removed temporary config file: {temp_file}{Style.RESET_ALL}")
-        except Exception as e:
-            handle_error(f"Error removing temporary config file {temp_file}", e)
-
 def main():
     # 检查命令行参数
     if len(sys.argv) < 2:
-        handle_error("Usage: python run-nodes.py <config_file>")
-
-    # 加载配置文件
-    config_file = sys.argv[1]
-    config = load_config(config_file)
-
-    # 读取节点配置
-    nodes = config.get("nodes", [])
-    if not nodes:
-        handle_error("No nodes found in config.json")
+        handle_error("Usage: python runNodes.py <config1.json> <config2.json> <config3.json> ...")
 
     processes = []
-    temp_files = []
+
     try:
-        # 依次启动节点
-        for node in nodes:
-            process, temp_file = start_node(node)
-            if process and temp_file:
+        # 遍历所有传入的配置文件
+        for config_file in sys.argv[1:]:
+            # 启动节点
+            process = start_node(config_file)
+            if process:
                 processes.append(process)
-                temp_files.append(temp_file)
 
         # 等待所有节点运行
         print(f"{Fore.GREEN}All nodes started. Press Ctrl+C to stop.{Style.RESET_ALL}")
@@ -166,8 +123,6 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         stop_nodes(processes)
-    finally:
-        clean_temp_files(temp_files)
 
 if __name__ == "__main__":
     main()

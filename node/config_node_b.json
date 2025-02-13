@@ -1,0 +1,16 @@
+{
+    "id": "node_b",
+    "port": "1235",
+    "bootstrap_node": "localhost:1234",
+    "max_conns": 100,
+    "discovery_interval": 10,
+    "heartbeat_interval": 5,
+    "log": {
+        "level": "warn",
+        "max_size": 100,
+        "max_backups": 3,
+        "max_age": 28,
+        "compress": true,
+        "api_port": "8081"
+    }
+}
