@@ -1,5 +1,3 @@
-// msg.go
-
 package main
 
 import (
@@ -46,8 +44,24 @@ var uncompressedMessageTypes = map[string]bool{
 	MessageTypePeerListReq: true,
 }
 
+// 定义不需要加密的消息类型
+var unencryptedMessageTypes = map[string]bool{
+	MessageTypePing:            true,
+	MessageTypePong:            true,
+	MessageTypePeerListReq:     true,
+	MessageTypePeerList:        true,
+	MessageTypeFileTransfer:    true,
+	MessageTypeFileTransferAck: true,
+	MessageTypeFileTransferNak: true,
+	MessageTypeNodeStatus:      true,
+}
+
 func shouldCompressMessage(msgType string) bool {
 	return !uncompressedMessageTypes[msgType]
+}
+
+func shouldEncryptMessage(msgType string) bool {
+	return !unencryptedMessageTypes[msgType]
 }
 
 // encodeMessage 将消息编码为 JSON
@@ -69,6 +83,7 @@ func decodeMessage(data []byte) (Message, error) {
 	return msg, nil
 }
 
+// CompressMessage 压缩消息
 func CompressMessage(msg Message) ([]byte, error) {
 	// 将消息编码为 JSON
 	data, err := encodeMessage(msg)
@@ -91,6 +106,7 @@ func CompressMessage(msg Message) ([]byte, error) {
 	return compressed, nil
 }
 
+// DecompressMessage 解压缩消息
 func DecompressMessage(data []byte) (Message, error) {
 	// 尝试解压缩数据
 	decoded, err := utils.Decompress(data)
@@ -103,28 +119,63 @@ func DecompressMessage(data []byte) (Message, error) {
 	return decodeMessage(data)
 }
 
-// EncryptMessage 加密聊天消息
-func EncryptMessage(msg Message) (Message, error) {
-	if msg.Type == MessageTypeChat && !msg.Encrypted {
-		encryptedData, err := utils.Encrypt(msg.Data)
-		if err != nil {
-			return msg, fmt.Errorf("failed to encrypt message: %w", err)
-		}
-		msg.Data = encryptedData
-		msg.Encrypted = true
+// PackMessage 打包消息，先压缩再加密
+func PackMessage(msg Message) ([]byte, error) {
+	// 压缩消息
+	compressedData, err := CompressMessage(msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compress message: %w", err)
 	}
-	return msg, nil
+
+	// 如果需要加密，则加密压缩后的数据
+	if shouldEncryptMessage(msg.Type) {
+		encryptedData, err := utils.Encrypt(compressedData) // 直接传入 []byte
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt message: %w", err)
+		}
+		return []byte(encryptedData), nil // 将 Base64 字符串转换为 []byte
+	}
+
+	// 如果不需要加密，直接返回压缩后的数据
+	return compressedData, nil
 }
 
-// DecryptMessage 解密聊天消息
-func DecryptMessage(msg Message) (Message, error) {
-	if msg.Type == MessageTypeChat && msg.Encrypted {
-		decryptedData, err := utils.Decrypt(msg.Data)
-		if err != nil {
-			return msg, fmt.Errorf("failed to decrypt message: %w", err)
-		}
-		msg.Data = decryptedData
-		msg.Encrypted = false
+// UnpackMessage 解包消息，处理多种情况（压缩、加密、压缩加密、未压缩未加密）
+func UnpackMessage(data []byte) (Message, error) {
+	var msg Message
+
+	// 尝试直接解析原始数据（未压缩未加密的情况）
+	if err := json.Unmarshal(data, &msg); err == nil {
+		return msg, nil
 	}
-	return msg, nil
+
+	// 尝试解压缩（压缩未加密的情况）
+	decompressedData, err := utils.Decompress(data)
+	if err == nil {
+		if err := json.Unmarshal(decompressedData, &msg); err == nil {
+			return msg, nil
+		}
+	}
+
+	// 尝试解密（未压缩加密的情况）
+	decryptedData, err := utils.Decrypt(string(data))
+	if err == nil {
+		if err := json.Unmarshal([]byte(decryptedData), &msg); err == nil {
+			return msg, nil
+		}
+	}
+
+	// 尝试解密并解压缩（压缩加密的情况）
+	decryptedData, err = utils.Decrypt(string(data))
+	if err == nil {
+		decompressedData, err := utils.Decompress([]byte(decryptedData))
+		if err == nil {
+			if err := json.Unmarshal(decompressedData, &msg); err == nil {
+				return msg, nil
+			}
+		}
+	}
+
+	// 如果所有尝试都失败，返回错误
+	return Message{}, fmt.Errorf("failed to unpack message: unknown format")
 }

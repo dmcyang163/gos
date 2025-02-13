@@ -12,8 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"node/utils"
-
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -32,12 +30,12 @@ type MessageHandler interface {
 
 func sendMessage(n *Node, conn net.Conn, msgType string, data string) {
 	n.net.SendMessage(conn, Message{
-		Type:      msgType,
-		Data:      data,
-		Sender:    n.User.Name,
-		Address:   ":" + n.Port,
-		Encrypted: true,
-		ID:        generateMessageID(),
+		Type:    msgType,
+		Data:    data,
+		Sender:  n.User.Name,
+		Address: ":" + n.Port,
+		//Encrypted: true,
+		ID: generateMessageID(),
 	})
 }
 
@@ -86,14 +84,14 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 		}
 
 		// 解密接收到的消息
-		if msg.Encrypted {
-			decryptedData, err := utils.Decrypt(msg.Data)
-			if err != nil {
-				n.logger.WithError(err).Error("Failed to decrypt message")
-				return
-			}
-			msg.Data = decryptedData
-		}
+		// if msg.Encrypted {
+		// 	decryptedData, err := utils.Decrypt(msg.Data)
+		// 	if err != nil {
+		// 		n.logger.WithError(err).Error("Failed to decrypt message")
+		// 		return
+		// 	}
+		// 	msg.Data = decryptedData
+		// }
 
 		// 记录聊天消息到独立的日志文件
 		n.chatLogger.WithFields(logrus.Fields{
@@ -110,17 +108,17 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 			dialogue := n.findDialogueForSender(msg.Sender)
 
 			// 加密回复消息
-			encryptedDialogue, err := utils.Encrypt(string(dialogue))
-			if err != nil {
-				n.logger.WithError(err).Error("Failed to encrypt reply message")
-				return
-			}
+			// encryptedDialogue, err := utils.Encrypt(string(dialogue))
+			// if err != nil {
+			// 	n.logger.WithError(err).Error("Failed to encrypt reply message")
+			// 	return
+			// }
 
 			n.logger.WithFields(logrus.Fields{
 				"reply": dialogue,
 			}).Info("Sending reply")
 
-			sendMessage(n, conn, MessageTypeChat, encryptedDialogue)
+			sendMessage(n, conn, MessageTypeChat, dialogue)
 		}
 	}()
 }

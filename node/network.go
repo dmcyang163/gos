@@ -171,16 +171,21 @@ func max(a, b int) int {
 // SendMessage sends a message to a connection.
 func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	// 压缩消息
-	msgBytes, err := CompressMessage(msg)
+	//msgBytes, err := CompressMessage(msg)
+	msgBytes, err := PackMessage(msg)
 	if err != nil {
-		return fmt.Errorf("error compressing message: %w", err)
+		return fmt.Errorf("error packing message: %w", err)
 	}
+	/*
+		if err != nil {
+			return fmt.Errorf("error compressing message: %w", err)
+		}
 
-	// 验证压缩后的数据
-	if len(msgBytes) == 0 {
-		return fmt.Errorf("compressed message is empty")
-	}
-
+		// 验证压缩后的数据
+		if len(msgBytes) == 0 {
+			return fmt.Errorf("compressed message is empty")
+		}
+	*/
 	// 记录日志
 	nm.logger.WithFields(map[string]interface{}{
 		"original_size":   len(msg.Data),
@@ -238,11 +243,16 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	}
 
 	// 解压消息
-	msg, err := DecompressMessage(buffer)
+	//msg, err := DecompressMessage(buffer)
+	msg, err := UnpackMessage(buffer)
 	if err != nil {
-		return Message{}, fmt.Errorf("error decompressing message: %w", err)
+		return Message{}, fmt.Errorf("error unpacking message: %w", err)
 	}
-
+	/*
+		if err != nil {
+			return Message{}, fmt.Errorf("error decompressing message: %w", err)
+		}
+	*/
 	return msg, nil
 }
 

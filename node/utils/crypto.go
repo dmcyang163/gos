@@ -35,9 +35,9 @@ func validateKey(key []byte) error {
 }
 
 // Encrypt 使用 AES 加密消息
-func Encrypt(plaintext string) (string, error) {
+func Encrypt(plaintext []byte) (string, error) {
 	// 如果明文为空，直接返回空字符串
-	if plaintext == "" {
+	if len(plaintext) == 0 {
 		return "", nil
 	}
 
@@ -51,11 +51,8 @@ func Encrypt(plaintext string) (string, error) {
 		return "", fmt.Errorf("failed to create cipher block: %w", err)
 	}
 
-	// 将明文转换为字节切片
-	plaintextBytes := []byte(plaintext)
-
 	// 创建加密块
-	ciphertext := make([]byte, aes.BlockSize+len(plaintextBytes))
+	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
 	iv := ciphertext[:aes.BlockSize] // 初始化向量
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return "", fmt.Errorf("failed to generate IV: %w", err)
@@ -63,37 +60,37 @@ func Encrypt(plaintext string) (string, error) {
 
 	// 加密
 	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintextBytes)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
 
 	// 返回 Base64 编码的密文
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
 // Decrypt 使用 AES 解密消息
-func Decrypt(ciphertext string) (string, error) {
-	// 如果密文为空，直接返回空字符串
+func Decrypt(ciphertext string) ([]byte, error) {
+	// 如果密文为空，直接返回空字节切片
 	if ciphertext == "" {
-		return "", nil
+		return []byte{}, nil
 	}
 
 	// 验证密钥长度
 	if err := validateKey(aesKey); err != nil {
-		return "", fmt.Errorf("invalid key: %w", err)
+		return nil, fmt.Errorf("invalid key: %w", err)
 	}
 
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to create cipher block: %w", err)
+		return nil, fmt.Errorf("failed to create cipher block: %w", err)
 	}
 
 	// 解码 Base64 密文
 	ciphertextBytes, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode base64 ciphertext: %w", err)
+		return nil, fmt.Errorf("failed to decode base64 ciphertext: %w", err)
 	}
 
 	if len(ciphertextBytes) < aes.BlockSize {
-		return "", errors.New("ciphertext too short")
+		return nil, errors.New("ciphertext too short")
 	}
 
 	// 提取初始化向量
@@ -105,5 +102,5 @@ func Decrypt(ciphertext string) (string, error) {
 	stream.XORKeyStream(ciphertextBytes, ciphertextBytes)
 
 	// 返回解密后的明文
-	return string(ciphertextBytes), nil
+	return ciphertextBytes, nil
 }
