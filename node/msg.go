@@ -81,7 +81,7 @@ func CompressMessage(msg Message) ([]byte, error) {
 		return data, nil
 	}
 
-	// 调用 compression.go 中的 compress 函数
+	// 调用 compressor.go 中的 compress 函数
 	compressed, err := utils.Compress(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress message: %w", err)
@@ -101,4 +101,30 @@ func DecompressMessage(data []byte) (Message, error) {
 
 	// 如果解压缩失败，则假定消息未压缩，直接解码消息
 	return decodeMessage(data)
+}
+
+// EncryptMessage 加密聊天消息
+func EncryptMessage(msg Message) (Message, error) {
+	if msg.Type == MessageTypeChat && !msg.Encrypted {
+		encryptedData, err := utils.Encrypt(msg.Data)
+		if err != nil {
+			return msg, fmt.Errorf("failed to encrypt message: %w", err)
+		}
+		msg.Data = encryptedData
+		msg.Encrypted = true
+	}
+	return msg, nil
+}
+
+// DecryptMessage 解密聊天消息
+func DecryptMessage(msg Message) (Message, error) {
+	if msg.Type == MessageTypeChat && msg.Encrypted {
+		decryptedData, err := utils.Decrypt(msg.Data)
+		if err != nil {
+			return msg, fmt.Errorf("failed to decrypt message: %w", err)
+		}
+		msg.Data = decryptedData
+		msg.Encrypted = false
+	}
+	return msg, nil
 }
