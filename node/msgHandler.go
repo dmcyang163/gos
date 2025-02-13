@@ -94,7 +94,7 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 		color.Cyan("%s: %s\n", msg.Sender, msg.Data)
 
 		if shouldReplyToMessage(msg) {
-			dialogue := n.findDialogueForSender(msg.Sender)
+			dialogue := n.User.FindDialogueForSender(msg.Sender)
 			n.logger.WithFields(logrus.Fields{
 				"reply": dialogue,
 			}).Info("Sending reply")

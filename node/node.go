@@ -2,11 +2,9 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,7 +19,6 @@ type Node struct {
 	config        *Config
 	User          *User // 用户信息
 	processedMsgs sync.Map
-	namesMap      map[string]NameEntry
 	net           *NetworkManager
 	peers         *PeerManager
 	router        *MessageRouter
@@ -29,24 +26,9 @@ type Node struct {
 }
 
 // NewNode creates a new Node instance.
-func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExecutor) *Node {
-	// 随机选择一个名字
-	entry := names[rand.Intn(len(names))]
-	name := fmt.Sprintf("%s·%s", entry.Name, config.Port)
+func NewNode(config *Config, logger Logger, executor TaskExecutor) *Node {
 
-	// 初始化 namesMap
-	namesMap := make(map[string]NameEntry)
-	for _, entry := range names {
-		namesMap[entry.Name] = entry
-	}
-
-	user := &User{
-		Name:           name,
-		Description:    entry.Description,
-		SpecialAbility: entry.SpecialAbility,
-		Tone:           entry.Tone,
-		Dialogues:      entry.Dialogues,
-	}
+	user := NewUser("")
 
 	// 初始化消息路由器
 	router := NewMessageRouter(logger, executor)
@@ -62,24 +44,11 @@ func NewNode(config *Config, names []NameEntry, logger Logger, executor TaskExec
 		config:        config,
 		User:          user,
 		processedMsgs: sync.Map{},
-		namesMap:      namesMap,
 		net:           netManager,
 		peers:         peerManager,
 		router:        router,
 		executor:      executor,
 	}
-}
-
-// findDialogueForSender finds a dialogue for the sender based on their name.
-func (n *Node) findDialogueForSender(sender string) string {
-	for name, entry := range n.namesMap {
-		if strings.Contains(sender, name) {
-			if len(entry.Dialogues) > 0 {
-				return entry.Dialogues[rand.Intn(len(entry.Dialogues))]
-			}
-		}
-	}
-	return "你好，我是" + sender + "。"
 }
 
 // startServer starts the TCP server to listen for incoming connections.
@@ -97,9 +66,9 @@ func (n *Node) startServer() {
 	n.logger.WithFields(map[string]interface{}{
 		"port":            n.Port,
 		"name":            n.User.Name,
-		"description":     n.User.Description,
-		"special_ability": n.User.SpecialAbility,
-		"tone":            n.User.Tone,
+		"description":     n.User.namesMap[n.User.Name].Description,
+		"special_ability": n.User.namesMap[n.User.Name].SpecialAbility,
+		"tone":            n.User.namesMap[n.User.Name].Tone,
 	}).Info("Server started")
 
 	for {

@@ -40,13 +40,6 @@ func main() {
 		return
 	}
 
-	// 加载名字列表
-	names, err := configLoader.LoadNames("names.json")
-	if err != nil {
-		fmt.Printf("Error loading names: %v\n", err)
-		return
-	}
-
 	// 初始化日志模块
 	logger := NewLogrusLogger(config)
 
@@ -59,7 +52,7 @@ func main() {
 	defer executor.Release()
 
 	// 创建节点并注入依赖
-	node := NewNode(config, names, logger, executor)
+	node := NewNode(config, logger, executor)
 
 	// 启动日志级别 API
 	StartLogLevelAPI(logger, config)

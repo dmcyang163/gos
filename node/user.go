@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,33 +13,88 @@ import (
 
 // User contains information about the user.
 type User struct {
-	UUID           string   `json:"uuid"`
-	Name           string   `json:"name"`
-	Description    string   `json:"description"`
-	SpecialAbility string   `json:"special_ability"`
-	Tone           string   `json:"tone"`
-	Dialogues      []string `json:"dialogues"`
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
 
-	Password    string `json:"password"`     // 密码字段
-	IsOnline    bool   `json:"is_online"`    // 是否在线
-	IsInvisible bool   `json:"is_invisible"` // 是否隐身
-	LastSeen    int64  `json:"last_seen"`    // 最后活跃时间
+	Password    string               `json:"password"`     // 密码字段
+	IsOnline    bool                 `json:"is_online"`    // 是否在线
+	IsInvisible bool                 `json:"is_invisible"` // 是否隐身
+	LastSeen    int64                `json:"last_seen"`    // 最后活跃时间
+	namesMap    map[string]NameEntry // 存储名称和 NameEntry 的映射
 }
 
 // NewUser creates a new User instance with a unique UUID.
-func NewUser(name, description, specialAbility, tone string, dialogues []string) *User {
+func NewUser(name string) *User {
 	uuid, _ := uuid.NewRandom()
+	namesMap := loadNamesMap()
+	nameEntry, _ := GetRandomNameEntry(namesMap)
+	name_ := nameEntry.Name
 	return &User{
-		UUID:           uuid.String(),
-		Name:           name,
-		Description:    description,
-		SpecialAbility: specialAbility,
-		Tone:           tone,
-		Dialogues:      dialogues,
-		IsOnline:       false,
-		IsInvisible:    false,
-		LastSeen:       time.Now().Unix(),
+		UUID:        uuid.String(),
+		Name:        name_,
+		IsOnline:    false,
+		IsInvisible: false,
+		LastSeen:    time.Now().Unix(),
+		namesMap:    namesMap, // 从 names.json 加载 namesMap
 	}
+}
+
+// loadNamesMap 从 names.json 文件中加载 namesMap
+func loadNamesMap() map[string]NameEntry {
+	data, err := os.ReadFile("names.json")
+	if err != nil {
+		fmt.Println("Failed to read names.json:", err)
+		return make(map[string]NameEntry)
+	}
+
+	var entries []NameEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		fmt.Println("Failed to parse names.json:", err)
+		return make(map[string]NameEntry)
+	}
+
+	// 将数组转换为 map
+	namesMap := make(map[string]NameEntry)
+	for _, entry := range entries {
+		namesMap[entry.Name] = entry
+	}
+
+	return namesMap
+}
+
+// GetRandomNameEntry 随机读取一个 NameEntry
+func GetRandomNameEntry(namesMap map[string]NameEntry) (NameEntry, bool) {
+	if len(namesMap) == 0 {
+		fmt.Println("namesMap is empty: no entries found")
+		return NameEntry{}, false
+	}
+
+	// 获取所有键
+	keys := make([]string, 0, len(namesMap))
+	for key := range namesMap {
+		keys = append(keys, key)
+	}
+
+	// 初始化随机数种子
+
+	// 生成随机索引
+	randomIndex := rand.Intn(len(keys))
+
+	// 返回随机值
+	randomKey := keys[randomIndex]
+	return namesMap[randomKey], true
+}
+
+// FindDialogueForSender 根据发送者名称查找对话
+func (u *User) FindDialogueForSender(senderName string) string {
+	for name, entry := range u.namesMap {
+		if strings.Contains(senderName, name) {
+			if len(entry.Dialogues) > 0 {
+				return entry.Dialogues[rand.Intn(len(entry.Dialogues))]
+			}
+		}
+	}
+	return "你好，我是" + senderName + "。"
 }
 
 // Login 用户登录
