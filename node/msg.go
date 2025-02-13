@@ -127,7 +127,7 @@ func PackMessage(msg Message) ([]byte, error) {
 	}
 
 	// 根据消息类型生成前缀
-	prefix := getMessagePrefix(msg.Type)
+	prefix := genMessagePrefix(msg.Type)
 
 	// 根据前缀处理数据
 	switch prefix {
@@ -160,7 +160,7 @@ func PackMessage(msg Message) ([]byte, error) {
 	}
 }
 
-func getMessagePrefix(messageType string) string {
+func genMessagePrefix(messageType string) string {
 	compressed := shouldCompressMessage(messageType)
 	encrypted := shouldEncryptMessage(messageType)
 
@@ -176,8 +176,8 @@ func getMessagePrefix(messageType string) string {
 	}
 }
 
-// parsePrefix 从消息中解析前缀，并返回前缀和剩余数据
-func parsePrefix(data []byte) (string, []byte, error) {
+// parseMessagePrefix 从消息中解析前缀，并返回前缀和剩余数据
+func parseMessagePrefix(data []byte) (string, []byte, error) {
 	separatorIndex := bytes.IndexByte(data, '|')
 	if separatorIndex == -1 {
 		return "", nil, fmt.Errorf("invalid message format: missing separator '|'")
@@ -193,7 +193,7 @@ func UnpackMessage(data []byte) (Message, error) {
 	var msg Message
 
 	// 解析前缀
-	prefix, remainingData, err := parsePrefix(data)
+	prefix, remainingData, err := parseMessagePrefix(data)
 	if err != nil {
 		return Message{}, fmt.Errorf("failed to parse prefix: %w", err)
 	}
