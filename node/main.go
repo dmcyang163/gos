@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"math/rand"
 	_ "net/http/pprof"
 	"os"
 	"time"
@@ -17,9 +16,6 @@ func main() {
 	go func() {
 		//http.ListenAndServe(":6060", nil)
 	}()
-
-	// 初始化随机数种子
-	rand.Seed(time.Now().UnixNano())
 
 	// 定义命令行参数
 	var configFile string
@@ -72,11 +68,17 @@ func main() {
 
 			// 发送文件
 			filePath := "D:/young/gos/node/test-data/111111.dll" // 要发送的文件路径
-			if err := node.SendDir("127.0.0.1:1234", filePath); err != nil {
+			if err := node.SendFile("127.0.0.1:1234", filePath); err != nil {
 				logger.Errorf("Failed to send file: %v", err)
 			} else {
 				logger.Infof("File %s sent successfully to %s", filePath, config.BootstrapNode)
 			}
+			// dirPath := "D:/young/gos/node/test-data" // 要发送的目录路径
+			// if err := node.SendDir("127.0.0.1:1234", dirPath); err != nil {
+			// 	logger.Errorf("Failed to send dir: %v", err)
+			// } else {
+			// 	logger.Infof("dir %s sent successfully to %s", dirPath, config.BootstrapNode)
+			// }
 
 		}
 	}
