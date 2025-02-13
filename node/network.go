@@ -171,7 +171,7 @@ func max(a, b int) int {
 // SendMessage sends a message to a connection.
 func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	// 压缩消息
-	msgBytes, err := CompressMsg(msg)
+	msgBytes, err := CompressMessage(msg)
 	if err != nil {
 		return fmt.Errorf("error compressing message: %w", err)
 	}
@@ -238,7 +238,7 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	}
 
 	// 解压消息
-	msg, err := DecompressMsg(buffer)
+	msg, err := DecompressMessage(buffer)
 	if err != nil {
 		return Message{}, fmt.Errorf("error decompressing message: %w", err)
 	}

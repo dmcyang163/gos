@@ -69,7 +69,7 @@ func decodeMessage(data []byte) (Message, error) {
 	return msg, nil
 }
 
-func CompressMsg(msg Message) ([]byte, error) {
+func CompressMessage(msg Message) ([]byte, error) {
 	// 将消息编码为 JSON
 	data, err := encodeMessage(msg)
 	if err != nil {
@@ -91,7 +91,7 @@ func CompressMsg(msg Message) ([]byte, error) {
 	return compressed, nil
 }
 
-func DecompressMsg(data []byte) (Message, error) {
+func DecompressMessage(data []byte) (Message, error) {
 	// 尝试解压缩数据
 	decoded, err := utils.Decompress(data)
 	if err == nil {
