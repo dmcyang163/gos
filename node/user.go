@@ -84,13 +84,8 @@ func GetRandomNameEntry(namesMap map[string]NameEntry) (NameEntry, bool) {
 		keys = append(keys, key)
 	}
 
-	// 初始化随机数种子
-
-	// 生成随机索引
-	randomIndex := rand.Intn(len(keys))
-
 	// 返回随机值
-	randomKey := keys[randomIndex]
+	randomKey := keys[rand.Intn(len(keys))]
 	return namesMap[randomKey], true
 }
 

@@ -63,12 +63,15 @@ func (n *Node) startServer() {
 	}
 	defer ln.Close()
 
+	// 提取 NameEntry 变量
+	nameEntry := n.User.namesMap[n.User.Name]
+	// 使用 WithFields 记录日志
 	n.logger.WithFields(map[string]interface{}{
 		"port":            n.Port,
-		"name":            n.User.Name,
-		"description":     n.User.namesMap[n.User.Name].Description,
-		"special_ability": n.User.namesMap[n.User.Name].SpecialAbility,
-		"tone":            n.User.namesMap[n.User.Name].Tone,
+		"name":            nameEntry.Name,
+		"description":     nameEntry.Description,
+		"special_ability": nameEntry.SpecialAbility,
+		"tone":            nameEntry.Tone,
 	}).Info("Server started")
 
 	for {
