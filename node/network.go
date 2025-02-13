@@ -152,22 +152,6 @@ func (nm *NetworkManager) calculateChunkSize(currentChunkSize, minChunkSize, max
 	return currentChunkSize
 }
 
-// 辅助函数：返回两个数中的最小值
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// 辅助函数：返回两个数中的最大值
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // SendMessage sends a message to a connection.
 func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	// 打包消息
@@ -187,26 +171,35 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 }
 
 // SendRawMessage sends raw bytes to a connection without additional copying.
+// func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
+// 	// 发送消息长度
+// 	if err := nm.writeLength(conn, uint32(len(data))); err != nil {
+// 		return fmt.Errorf("error sending message length: %w", err)
+// 	}
+
+// 	// 直接发送消息体
+// 	if _, err := conn.Write(data); err != nil {
+// 		return fmt.Errorf("error sending message body: %w", err)
+// 	}
+
+//		return nil
+//	}
 func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
-	// 发送消息长度
-	if err := nm.writeLength(conn, uint32(len(data))); err != nil {
-		return fmt.Errorf("error sending message length: %w", err)
-	}
+	// 获取缓冲区（复用池中资源）
+	buffer, release := nm.getBuffer(nm.sendBufferPool, 4+len(data))
+	defer release()
 
-	// 直接发送消息体
-	if _, err := conn.Write(data); err != nil {
-		return fmt.Errorf("error sending message body: %w", err)
-	}
+	// 写入消息长度（前4字节）
+	binary.BigEndian.PutUint32(buffer[:4], uint32(len(data)))
 
+	// 写入消息体（零拷贝）
+	copy(buffer[4:], data)
+
+	// 单次系统调用发送完整数据
+	if _, err := conn.Write(buffer[:4+len(data)]); err != nil {
+		return fmt.Errorf("error sending message: %w", err)
+	}
 	return nil
-}
-
-// writeLength writes the length of the message as a 4-byte big-endian integer.
-func (nm *NetworkManager) writeLength(conn net.Conn, length uint32) error {
-	lengthBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBytes, length)
-	_, err := conn.Write(lengthBytes)
-	return err
 }
 
 // ReadMessage reads a message from the connection.
