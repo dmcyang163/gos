@@ -23,6 +23,15 @@ type User struct {
 	namesMap    map[string]NameEntry // 存储名称和 NameEntry 的映射
 }
 
+// NameEntry represents a name with its description and dialogues.
+type NameEntry struct {
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	SpecialAbility string   `json:"special_ability"`
+	Tone           string   `json:"tone"`
+	Dialogues      []string `json:"dialogues"`
+}
+
 // NewUser creates a new User instance with a unique UUID.
 func NewUser(name string) *User {
 	uuid, _ := uuid.NewRandom()
