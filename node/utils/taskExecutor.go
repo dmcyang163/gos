@@ -30,7 +30,7 @@ type TaskExecutor interface {
 // AntsExecutor 是 ants.Pool 的封装，实现 TaskExecutor 接口
 type AntsExecutor struct {
 	pool      *ants.Pool
-	mu        sync.Mutex
+	mu        sync.RWMutex   // 改为 RWMutex
 	taskQueue *PriorityQueue // 优先级队列
 	stats     PoolStats      // 统计信息
 	logger    Logger         // 使用项目中的 Logger 模块
@@ -111,7 +111,13 @@ func (e *AntsExecutor) Submit(task TaskFunc) error {
 	return e.pool.Submit(wrappedTask)
 }
 
-// SubmitWithPriority 提交带优先级的任务到 Goroutine 池
+var taskPool = sync.Pool{
+	New: func() interface{} {
+		return &PriorityTask{}
+	},
+}
+
+// SubmitWithPriority 方法修改
 func (e *AntsExecutor) SubmitWithPriority(task TaskFunc, priority int) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -119,12 +125,16 @@ func (e *AntsExecutor) SubmitWithPriority(task TaskFunc, priority int) error {
 	taskName := getFunctionName(task)
 	wrappedTask := e.wrapTask(task, taskName, priority)
 
-	// 将任务添加到优先级队列
-	heap.Push(e.taskQueue, &PriorityTask{Task: wrappedTask, Priority: priority})
+	// 从对象池获取任务对象
+	pt := taskPool.Get().(*PriorityTask)
+	pt.Task = wrappedTask
+	pt.Priority = priority
+	heap.Push(e.taskQueue, pt)
 
-	// 从队列中取出最高优先级的任务并提交
+	// 提交任务后归还对象到池
 	if e.taskQueue.Len() > 0 {
-		pt := heap.Pop(e.taskQueue).(*PriorityTask)
+		pt = heap.Pop(e.taskQueue).(*PriorityTask)
+		defer taskPool.Put(pt) // 归还对象
 		return e.pool.Submit(pt.Task)
 	}
 	return nil
@@ -138,41 +148,44 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 	taskName := getFunctionName(task)
 	wrappedTask := e.wrapTask(task, taskName, 0)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	var err error
-
+	resultChan := make(chan error, 1)
 	go func() {
-		defer wg.Done()
-		err = e.pool.Submit(wrappedTask)
+		resultChan <- e.pool.Submit(wrappedTask)
 	}()
 
 	select {
+	case err := <-resultChan:
+		return err
 	case <-ctx.Done():
 		e.stats.TimeoutTasks++
 		e.logger.Warnf("Task %s timed out", taskName)
 		return ctx.Err()
-	case <-time.After(timeout):
-		wg.Wait()
-		return err
 	}
 }
 
 // SubmitWithRetry 提交带重试的任务到 Goroutine 池
 func (e *AntsExecutor) SubmitWithRetry(task TaskFunc, retries int) error {
 	taskName := getFunctionName(task)
-
-	var lastErr error
-	for i := 0; i < retries; i++ {
-		wrappedTask := e.wrapTask(task, taskName, 0)
-		err := e.pool.Submit(wrappedTask)
-		if err == nil {
-			return nil
+	wrappedTask := e.wrapTask(func() {
+		var lastErr error
+		for i := 0; i < retries; i++ {
+			if err := func() error {
+				defer func() {
+					if r := recover(); r != nil {
+						lastErr = fmt.Errorf("panic: %v", r)
+					}
+				}()
+				task()
+				return nil
+			}(); err == nil {
+				return
+			}
+			time.Sleep(time.Duration(1<<i) * time.Second)
 		}
-		lastErr = err
-		time.Sleep(time.Duration(1<<i) * time.Second) // 指数退避
-	}
-	return fmt.Errorf("task %s failed after %d retries: %w", taskName, retries, lastErr)
+		e.logger.Errorf("Task %s failed after %d retries: %v", taskName, retries, lastErr)
+	}, taskName, 0)
+
+	return e.pool.Submit(wrappedTask)
 }
 
 // Resize 动态调整 Goroutine 池的大小
@@ -183,14 +196,24 @@ func (e *AntsExecutor) Resize(size int) error {
 	if size < 1 {
 		return fmt.Errorf("pool size must be greater than 0")
 	}
-	e.pool.Tune(size)
+	currentSize := e.pool.Cap()
+	// 仅当调整幅度超过 20% 时生效
+	if abs(size-currentSize)*100/currentSize > 20 {
+		e.pool.Tune(size)
+	}
 	return nil
+}
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // Stats 返回 Goroutine 池的当前状态
 func (e *AntsExecutor) Stats() PoolStats {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return PoolStats{
 		Running:      e.pool.Running(),
 		Waiting:      e.pool.Waiting(),
@@ -205,11 +228,16 @@ func (e *AntsExecutor) Release() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// 等待所有任务完成
+	timeout := time.After(5 * time.Second)
 	for e.pool.Running() > 0 {
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-timeout:
+			e.logger.Error("Pool release timed out, force exiting")
+			return
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-
 	e.pool.Release()
 }
 
