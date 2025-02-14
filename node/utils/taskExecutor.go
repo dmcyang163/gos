@@ -79,55 +79,61 @@ func getFunctionName(fn interface{}) string {
 	return name
 }
 
-// 任务包装函数 (包装任务函数，添加统计和日志)
+// wrapTask 任务包装函数 (包装任务函数，添加统计和日志)
 func (e *AntsExecutor) wrapTask(task TaskFunc, priority int) func() {
-	taskName := getFunctionName(task) // 获取任务名称
+	taskName := getFunctionName(task)
+	logPrefix := fmt.Sprintf("Task %s", taskName)
+	if priority > 0 {
+		logPrefix = fmt.Sprintf("Task %s (priority %d)", taskName, priority)
+	}
+
+	logStart := func() {
+		e.logger.Debug(logPrefix + " started")
+	}
+
+	logFinish := func(duration time.Duration) {
+		e.logger.Debug(fmt.Sprintf("%s finished in %v", logPrefix, duration))
+	}
+
 	return func() {
-		start := time.Now()                     // 记录开始时间
-		atomic.AddInt32(&e.stats.TotalTasks, 1) // 更新总任务数
+		start := time.Now()
+		atomic.AddInt32(&e.stats.TotalTasks, 1)
+		logStart()
 
-		logMsg := fmt.Sprintf("Task %s started", taskName) // 构造日志信息
-		if priority > 0 {
-			logMsg = fmt.Sprintf("Task %s (priority %d) started", taskName, priority) // 构造带优先级的日志信息
-		}
-		e.logger.Debug(logMsg) // 记录调试日志
+		defer func() {
+			duration := time.Since(start)
+			logFinish(duration)
 
-		defer func() { // 延迟执行，处理 panic 和统计
-			duration := time.Since(start) // 计算执行时间
-			if r := recover(); r != nil { // 捕获 panic
-				errMsg := fmt.Sprintf("Task %s panic: %v", taskName, r) // 构造错误信息
-				if priority > 0 {
-					errMsg = fmt.Sprintf("Task %s (priority %d) panic: %v", taskName, priority, r) // 构造带优先级的错误信息
-				}
-				e.logger.Error(errMsg)                   // 记录错误日志
-				atomic.AddInt32(&e.stats.FailedTasks, 1) // 更新失败任务数
+			if r := recover(); r != nil {
+				e.logger.Errorf("%s panic: %v", logPrefix, r)
+				atomic.AddInt32(&e.stats.FailedTasks, 1)
 			} else {
-				atomic.AddInt32(&e.stats.CompletedTasks, 1) // 更新成功任务数
+				atomic.AddInt32(&e.stats.CompletedTasks, 1)
 			}
 
-			// 更新任务执行时间统计
-			e.mu.Lock()
-			e.stats.TaskDuration = duration         // 记录最近一次任务执行时间
-			if duration > e.stats.MaxTaskDuration { // 更新最大执行时间
-				e.stats.MaxTaskDuration = duration
-			}
-
-			completedTasks := atomic.LoadInt32(&e.stats.CompletedTasks) // 获取已完成任务数，原子操作
-			if completedTasks > 0 {                                     // 避免除以零
-				e.stats.AvgTaskDuration = time.Duration(
-					(int64(e.stats.AvgTaskDuration)*int64(completedTasks-1) + int64(duration)) / int64(completedTasks), // 计算平均执行时间
-				)
-			}
-			e.mu.Unlock()
-
-			durationMsg := fmt.Sprintf("Task %s finished in %v", taskName, duration) // 构造完成日志信息
-			if priority > 0 {
-				durationMsg = fmt.Sprintf("Task %s (priority %d) finished in %v", taskName, priority, duration) // 构造带优先级的完成日志信息
-			}
-			e.logger.Debug(durationMsg)                                  // 记录调试日志
-			atomic.StoreInt32(&e.stats.Running, int32(e.pool.Running())) // 更新正在运行的 Goroutine 数量
+			e.updateStats(duration)
+			atomic.StoreInt32(&e.stats.Running, int32(e.pool.Running()))
 		}()
+
 		task() // 执行任务
+	}
+}
+
+// updateStats 更新统计信息 (更新统计信息)
+func (e *AntsExecutor) updateStats(duration time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.stats.TaskDuration = duration
+	if duration > e.stats.MaxTaskDuration {
+		e.stats.MaxTaskDuration = duration
+	}
+
+	completedTasks := atomic.LoadInt32(&e.stats.CompletedTasks)
+	if completedTasks > 0 {
+		e.stats.AvgTaskDuration = time.Duration(
+			(int64(e.stats.AvgTaskDuration)*int64(completedTasks-1) + int64(duration)) / int64(completedTasks),
+		)
 	}
 }
 
@@ -342,11 +348,4 @@ func (pq *PriorityQueue) Pop() interface{} {
 	item.index = -1 // for safety
 	*pq = old[0 : n-1]
 	return item
-}
-
-// update modifies the priority and value of an Item in the queue. (更新队列中任务的优先级和值)
-func (pq *PriorityQueue) update(item *PriorityTask, task func(), priority int) {
-	item.Task = task
-	item.Priority = priority
-	heap.Fix(pq, item.index) // 调整堆
 }
