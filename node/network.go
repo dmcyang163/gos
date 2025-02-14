@@ -44,6 +44,7 @@ func (nm *NetworkManager) addConn(conn net.Conn) {
 func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
 }
+
 func calculateChecksum(data []byte) string {
 	hash := md5.Sum(data)
 	return hex.EncodeToString(hash[:])
@@ -96,6 +97,13 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 			break
 		}
 	}
+
+	nm.logger.WithFields(map[string]interface{}{
+		"file_path":  filePath,
+		"bytes_sent": totalBytesSent,
+		"duration":   time.Since(startTime).String(),
+	}).Info("File sent successfully")
+
 	return nil
 }
 
@@ -129,6 +137,11 @@ func (nm *NetworkManager) sendChunkWithRetry(conn net.Conn, fileInfo os.FileInfo
 	for i := 0; i < retries; i++ {
 		if err := nm.SendMessage(conn, msg); err != nil {
 			if i == retries-1 {
+				nm.logger.WithFields(map[string]interface{}{
+					"file_name": fileInfo.Name(),
+					"chunk_id":  chunkID,
+					"error":     err,
+				}).Error("Failed to send file chunk after retries")
 				return fmt.Errorf("failed to send file chunk after %d retries: %w", retries, err)
 			}
 			time.Sleep(100 * time.Millisecond) // 等待 100ms 后重试
@@ -160,12 +173,6 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	if err != nil {
 		return fmt.Errorf("error packing message: %w", err)
 	}
-
-	// 记录日志
-	nm.logger.WithFields(map[string]interface{}{
-		"original_size":   len(msg.Data),
-		"compressed_size": len(msgBytes),
-	}).Debug("Message compression details")
 
 	// 使用 SendRawMessage 发送压缩后的消息
 	return nm.SendRawMessage(conn, msgBytes)
@@ -229,10 +236,6 @@ func (nm *NetworkManager) readLength(reader *bufio.Reader) (uint32, error) {
 		// 尝试读取4字节的长度字段
 		_, err := io.ReadFull(reader, lengthBytes)
 		if err != nil {
-			nm.logger.WithFields(map[string]interface{}{
-				"retry": i + 1,
-				"error": err,
-			}).Warn("Failed to read length bytes, retrying...")
 			time.Sleep(100 * time.Millisecond) // 等待100ms后重试
 			continue
 		}

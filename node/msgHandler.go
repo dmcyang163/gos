@@ -83,7 +83,7 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 		}
 
 		// 记录聊天消息到独立的日志文件
-		n.chatLogger.WithFields(logrus.Fields{
+		n.chatLogger.WithFields(map[string]interface{}{
 			"timestamp": time.Now().Format(time.RFC3339),
 			"sender":    msg.Sender,
 			"address":   msg.Address,
@@ -95,10 +95,6 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 
 		if shouldReplyToMessage(msg) {
 			dialogue := n.User.FindDialogueForSender(msg.Sender)
-			n.logger.WithFields(logrus.Fields{
-				"reply": dialogue,
-			}).Info("Sending reply")
-
 			sendMessage(n, conn, MessageTypeChat, dialogue)
 		}
 	}()

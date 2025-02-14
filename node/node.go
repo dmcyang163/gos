@@ -29,7 +29,6 @@ type Node struct {
 
 // NewNode creates a new Node instance.
 func NewNode(config *Config, logger utils.Logger, executor utils.TaskExecutor) *Node {
-
 	user := NewUser("")
 
 	// 初始化消息路由器
@@ -125,7 +124,7 @@ func (n *Node) handleConnection(conn net.Conn) {
 				"trace_id":    traceID,
 				"error":       err.Error(), // 显式记录错误信息
 				"remote_addr": conn.RemoteAddr().String(),
-			}).Error("Error reading message!")
+			}).Error("Error reading message")
 			continue
 		}
 
@@ -226,7 +225,6 @@ func (n *Node) startHeartbeat() {
 
 // BroadcastMessage broadcasts a message to all connected peers.
 func (n *Node) BroadcastMessage(message string) error {
-
 	msg := Message{
 		Type:    MessageTypeChat,
 		Data:    message,
@@ -240,7 +238,7 @@ func (n *Node) BroadcastMessage(message string) error {
 		err := n.executor.Submit(func() {
 			if err := n.net.SendMessage(conn, msg); err != nil {
 				n.logger.WithFields(map[string]interface{}{
-					"error": err.Error(), // 显式记录错误信息
+					"error": err.Error(),
 				}).Error("Error sending message")
 			}
 		})
