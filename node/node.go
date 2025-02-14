@@ -260,7 +260,7 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 	}
 
 	// 获取目录名字
-	dirName := filepath.Base(dirPath)
+	dirName := filepath.Base(dirPath) // dirName 是 "test-data"
 
 	// 遍历目录
 	err := filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
@@ -279,15 +279,15 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 			return fmt.Errorf("failed to get relative path: %w", err)
 		}
 
-		// 拼接目录名字和文件名
-		fullFileName := filepath.Join(dirName, relPath)
+		// 将 dirName 作为 relPath 的父目录
+		fullRelPath := filepath.Join(dirName, relPath)
 
-		// 调用 SendFile 发送文件
-		if err := n.SendFile(peerAddr, filePath); err != nil {
+		// 调用 SendFile 发送文件，并传递完整相对路径
+		if err := n.SendFile(peerAddr, filePath, fullRelPath); err != nil {
 			return fmt.Errorf("failed to send file %s: %w", filePath, err)
 		}
 
-		n.logger.Infof("Sent file: %s", fullFileName)
+		n.logger.Infof("Sent file: %s", fullRelPath)
 		return nil
 	})
 
@@ -299,7 +299,7 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 }
 
 // SendFile sends a file to a peer using an existing connection.
-func (n *Node) SendFile(peerAddr string, filePath string) error {
+func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error {
 	// 检查是否已经连接到该 peer
 	conn, ok := n.net.Conns.Load(peerAddr)
 	if !ok {
@@ -311,10 +311,11 @@ func (n *Node) SendFile(peerAddr string, filePath string) error {
 		n.logger.WithFields(map[string]interface{}{
 			"peer_addr": peerAddr,
 			"file_path": filePath,
+			"rel_path":  relPath,
 		}).Info("Starting to send file")
 
 		// 使用现有的连接发送文件
-		if err := n.net.SendFile(conn.(net.Conn), filePath); err != nil {
+		if err := n.net.SendFile(conn.(net.Conn), filePath, relPath); err != nil {
 			n.logger.WithFields(map[string]interface{}{
 				"peer_addr": peerAddr,
 				"file_path": filePath,

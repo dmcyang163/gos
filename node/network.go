@@ -50,7 +50,7 @@ func calculateChecksum(data []byte) string {
 }
 
 // SendFile sends a file in chunks using sendBufferPool.
-func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
+func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -82,7 +82,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string) error {
 		}
 
 		// 发送文件块
-		if err := nm.sendChunkWithRetry(conn, fileInfo, buffer[:n], chunkID, err == io.EOF); err != nil {
+		if err := nm.sendChunkWithRetry(conn, fileInfo, relPath, buffer[:n], chunkID, err == io.EOF); err != nil {
 			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
 
@@ -109,7 +109,7 @@ func (nm *NetworkManager) readFileChunk(file *os.File, buffer []byte) (int, erro
 }
 
 // sendChunkWithRetry 发送文件块并支持重试机制
-func (nm *NetworkManager) sendChunkWithRetry(conn net.Conn, fileInfo os.FileInfo, chunk []byte, chunkID int, isLast bool) error {
+func (nm *NetworkManager) sendChunkWithRetry(conn net.Conn, fileInfo os.FileInfo, relPath string, chunk []byte, chunkID int, isLast bool) error {
 	// 计算文件块的校验和
 	checksum := calculateChecksum(chunk)
 
@@ -117,6 +117,7 @@ func (nm *NetworkManager) sendChunkWithRetry(conn net.Conn, fileInfo os.FileInfo
 		Type:     MessageTypeFileTransfer,
 		FileName: fileInfo.Name(),
 		FileSize: fileInfo.Size(),
+		RelPath:  relPath,
 		Chunk:    chunk,
 		ChunkID:  chunkID,
 		IsLast:   isLast,

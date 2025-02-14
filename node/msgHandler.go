@@ -167,7 +167,7 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 	if msg.IsLast {
 		fmt.Printf("last chunk!!!!%d\n", msg.ChunkID)
 
-		go h.writeFile(n, msg.FileName, fb)
+		go h.writeFile(n, msg.FileName, fb, msg.RelPath)
 		h.fileBuffers.Delete(msg.FileName)
 
 		fmt.Printf("rec fileName %s\n", msg.FileName)
@@ -175,15 +175,20 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 }
 
 // writeFile 将文件块写入磁盘
-func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer) {
+func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer, relPath string) {
 	// 确保 received_files 目录存在
 	os.MkdirAll("received_files", os.ModePerm)
 
 	// 构建文件路径
-	filePath := filepath.Join("received_files", fileName)
+	var filePath string
+	if relPath != "" && !strings.Contains(relPath, "..") { // 检查 relPath 是否合法
+		filePath = filepath.Join("received_files", relPath) // 直接使用 relPath
+	} else {
+		filePath = filepath.Join("received_files", fileName)
+	}
 
-	// 创建目录（如果不存在）
-	dir := filepath.Dir(filePath)
+	// 创建文件的父目录（如果不存在）
+	dir := filepath.Dir(filePath) // 获取文件的父目录
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		n.logger.WithError(err).Error("Failed to create directory")
 		return
