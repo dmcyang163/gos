@@ -1,7 +1,10 @@
 // msgRouter.go
 package main
 
-import "net"
+import (
+	"net"
+	. "node/utils"
+)
 
 // MessageRouter routes messages to the appropriate handler.
 type MessageRouter struct {

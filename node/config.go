@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	. "node/utils"
 	"os"
 )
 

@@ -9,6 +9,8 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/pflag"
+
+	. "node/utils"
 )
 
 func main() {
