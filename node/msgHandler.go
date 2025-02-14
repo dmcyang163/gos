@@ -4,7 +4,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -133,7 +132,6 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 
 	// 检查连接状态
 	if _, err := conn.Write([]byte{}); err != nil {
-		fmt.Printf("Connection to %s is closed: %v", conn.RemoteAddr().String(), err)
 		n.logger.Errorf("Connection to %s is closed: %v", conn.RemoteAddr().String(), err)
 		return
 	}
@@ -142,8 +140,6 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 	receivedChecksum := calculateChecksum(msg.Chunk)
 	if receivedChecksum != msg.Checksum {
 		n.logger.Errorf("Checksum mismatch for chunk %d of file %s", msg.ChunkID, msg.FileName)
-		// 可以选择重传该文件块或通知发送方
-
 		return
 	}
 
@@ -161,12 +157,8 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 
 	// 如果是最后一块，则写入文件
 	if msg.IsLast {
-		fmt.Printf("last chunk!!!!%d\n", msg.ChunkID)
-
 		go h.writeFile(n, msg.FileName, fb, msg.RelPath)
 		h.fileBuffers.Delete(msg.FileName)
-
-		fmt.Printf("rec fileName %s\n", msg.FileName)
 	}
 }
 
