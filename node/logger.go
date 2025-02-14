@@ -30,12 +30,23 @@ type LogrusLogger struct {
 	entry *logrus.Entry
 }
 
-var logFile = &lumberjack.Logger{
-	Filename:   "log/node.log",
-	MaxSize:    100, // Default values, will be overridden by config
+// 默认日志配置
+var defaultLogConfig = LogConfig{
+	Level:      "info",
+	MaxSize:    100,
 	MaxBackups: 3,
 	MaxAge:     28,
 	Compress:   true,
+	APIPort:    "8081",
+}
+
+type LogConfig struct {
+	Level      string `json:"level"`
+	MaxSize    int    `json:"max_size"`
+	MaxBackups int    `json:"max_backups"`
+	MaxAge     int    `json:"max_age"`
+	Compress   bool   `json:"compress"`
+	APIPort    string `json:"api_port"`
 }
 
 type OrderedJSONFormatter struct {
@@ -123,27 +134,18 @@ func (hook *AsyncHook) Close() {
 	hook.wg.Wait()      // 等待 Goroutine 结束
 }
 
-func NewLogrusLogger(config *Config) Logger {
+func configureLogger(output io.Writer, config *LogConfig) *logrus.Logger {
 	logger := logrus.New()
 
-	// 配置日志轮转
-	logFile.MaxSize = config.Log.MaxSize
-	logFile.MaxBackups = config.Log.MaxBackups
-	logFile.MaxAge = config.Log.MaxAge
-	logFile.Compress = config.Log.Compress
+	logger.SetOutput(output)
 
-	// 设置日志输出：控制台 + 文件
-	logger.SetOutput(io.MultiWriter(os.Stdout, logFile))
-
-	// 使用自定义的 OrderedJSONFormatter
 	logger.SetFormatter(&OrderedJSONFormatter{
 		JSONFormatter: logrus.JSONFormatter{
 			TimestampFormat: "2006-01-02 15:04:05",
 		},
 	})
 
-	// 设置日志级别
-	switch config.Log.Level {
+	switch config.Level {
 	case "debug":
 		logger.SetLevel(logrus.DebugLevel)
 	case "info":
@@ -156,8 +158,7 @@ func NewLogrusLogger(config *Config) Logger {
 		logger.SetLevel(logrus.InfoLevel)
 	}
 
-	// 添加异步 Hook
-	asyncHook := NewAsyncHook(1000) // 缓冲区大小为 1000
+	asyncHook := NewAsyncHook(1000)
 	logger.AddHook(asyncHook)
 
 	// 在程序退出时关闭 Hook
@@ -166,51 +167,53 @@ func NewLogrusLogger(config *Config) Logger {
 		asyncHook.Close()
 	}()
 
-	// 将 *logrus.Logger 转换为 *logrus.Entry
-	entry := logrus.NewEntry(logger)
-	return &LogrusLogger{entry: entry}
+	return logger
 }
 
-// NewChatLogger 创建一个新的聊天日志实例
-func NewChatLogger(config *Config) Logger {
-	logger := logrus.New()
-
-	// 配置聊天日志轮转
-	chatLogFile := &lumberjack.Logger{
-		Filename:   "log/chat.log", // 聊天日志文件名
-		MaxSize:    config.Log.MaxSize,
-		MaxBackups: config.Log.MaxBackups,
-		MaxAge:     config.Log.MaxAge,
-		Compress:   config.Log.Compress,
+// NewLogrusLogger 创建一个新的 LogrusLogger 实例
+func NewLogrusLogger(filename string, config *LogConfig) Logger {
+	if config == nil {
+		config = &defaultLogConfig // 使用默认配置
 	}
 
-	// 设置日志输出：仅文件
-	logger.SetOutput(chatLogFile)
+	logFile := &lumberjack.Logger{
+		Filename:   filename,
+		MaxSize:    config.MaxSize,
+		MaxBackups: config.MaxBackups,
+		MaxAge:     config.MaxAge,
+		Compress:   config.Compress,
+	}
 
-	// 使用自定义的 OrderedJSONFormatter
-	logger.SetFormatter(&OrderedJSONFormatter{
-		JSONFormatter: logrus.JSONFormatter{
-			TimestampFormat: "2006-01-02 15:04:05",
-		},
-	})
-
-	// 设置日志级别
-	logger.SetLevel(logrus.InfoLevel) // 聊天日志固定为 Info 级别
-
-	// 添加异步 Hook
-	asyncHook := NewAsyncHook(1000) // 缓冲区大小为 1000
-	logger.AddHook(asyncHook)
-
-	// 在程序退出时关闭 Hook
-	go func() {
-		<-make(chan struct{}) // 阻塞，直到程序退出
-		asyncHook.Close()
-	}()
-
-	// 将 *logrus.Logger 转换为 *logrus.Entry
+	logger := configureLogger(
+		io.MultiWriter(os.Stdout, logFile),
+		config, // 传递配置
+	)
 	entry := logrus.NewEntry(logger)
 	return &LogrusLogger{entry: entry}
 }
+
+// NewChatLogger 创建一个新的 ChatLogger 实例
+func NewChatLogger(filename string, config *LogConfig) Logger {
+	if config == nil {
+		config = &defaultLogConfig // 使用默认配置
+	}
+
+	chatLogFile := &lumberjack.Logger{
+		Filename:   filename, // 聊天日志文件名
+		MaxSize:    config.MaxSize,
+		MaxBackups: config.MaxBackups,
+		MaxAge:     config.MaxAge,
+		Compress:   config.Compress,
+	}
+
+	logger := configureLogger(
+		chatLogFile,
+		config, // 传递配置
+	)
+	entry := logrus.NewEntry(logger)
+	return &LogrusLogger{entry: entry}
+}
+
 func (l *LogrusLogger) Debugf(format string, args ...interface{}) {
 	l.entry.Debugf(format, args...)
 }
@@ -278,7 +281,7 @@ func SetLogLevel(logger Logger, level string) {
 }
 
 // StartLogLevelAPI starts an HTTP server to dynamically adjust the log level.
-func StartLogLevelAPI(logger Logger, config *Config) {
+func StartLogLevelAPI(logger Logger) {
 	http.HandleFunc("/loglevel", func(w http.ResponseWriter, r *http.Request) {
 		level := r.URL.Query().Get("level")
 		if level == "" {
@@ -289,6 +292,6 @@ func StartLogLevelAPI(logger Logger, config *Config) {
 		w.Write([]byte("Log level updated to " + level))
 	})
 
-	go http.ListenAndServe(":"+config.Log.APIPort, nil)
-	logger.WithFields(map[string]interface{}{"port": config.Log.APIPort}).Info("Log level API started")
+	go http.ListenAndServe(":"+defaultLogConfig.APIPort, nil)
+	logger.WithFields(map[string]interface{}{"port": defaultLogConfig.APIPort}).Info("Log level API started")
 }

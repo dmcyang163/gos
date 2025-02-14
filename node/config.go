@@ -17,15 +17,6 @@ type Config struct {
 	Log               LogConfig `json:"log"`
 }
 
-type LogConfig struct {
-	Level      string `json:"level"`
-	MaxSize    int    `json:"max_size"`
-	MaxBackups int    `json:"max_backups"`
-	MaxAge     int    `json:"max_age"`
-	Compress   bool   `json:"compress"`
-	APIPort    string `json:"api_port"`
-}
-
 // ConfigLoader 是配置文件加载器的接口
 type ConfigLoader interface {
 	LoadConfig(path string) (*Config, error)

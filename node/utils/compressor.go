@@ -8,7 +8,7 @@ import (
 )
 
 // 默认压缩器
-var defaultCompressor = NewSnappyCompressor()
+var defaultCompressor = NewZstdCompressor()
 
 // Compress 使用默认压缩器压缩数据
 func Compress(data []byte) ([]byte, error) {

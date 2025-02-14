@@ -37,7 +37,7 @@ func main() {
 	}
 
 	// 初始化日志模块
-	logger := NewLogrusLogger(config)
+	logger := NewLogrusLogger("log/node.log", nil)
 
 	// 初始化 Goroutine 池
 	executor, err := NewAntsExecutor(100, logger)
@@ -51,7 +51,7 @@ func main() {
 	node := NewNode(config, logger, executor)
 
 	// 启动日志级别 API
-	StartLogLevelAPI(logger, config)
+	StartLogLevelAPI(logger)
 
 	// 启动服务器和其他协程
 	go node.startServer()
@@ -67,18 +67,19 @@ func main() {
 			time.Sleep(5 * time.Second)
 
 			// 发送文件
-			filePath := "D:/young/gos/node/test-data/111111.dll" // 要发送的文件路径
-			if err := node.SendFile("127.0.0.1:1234", filePath); err != nil {
-				logger.Errorf("Failed to send file: %v", err)
-			} else {
-				logger.Infof("File %s sent successfully to %s", filePath, config.BootstrapNode)
-			}
-			// dirPath := "D:/young/gos/node/test-data" // 要发送的目录路径
-			// if err := node.SendDir("127.0.0.1:1234", dirPath); err != nil {
-			// 	logger.Errorf("Failed to send dir: %v", err)
+			// filePath := "D:/young/gos/node/test-data/111111.dll" // 要发送的文件路径
+			// if err := node.SendFile("127.0.0.1:1234", filePath, ""); err != nil {
+			// 	logger.Errorf("Failed to send file: %v", err)
 			// } else {
-			// 	logger.Infof("dir %s sent successfully to %s", dirPath, config.BootstrapNode)
+			// 	logger.Infof("File %s sent successfully to %s", filePath, config.BootstrapNode)
 			// }
+
+			dirPath := "D:/young/gos/node/test-data" // 要发送的目录路径
+			if err := node.SendDir("127.0.0.1:1234", dirPath); err != nil {
+				logger.Errorf("Failed to send dir: %v", err)
+			} else {
+				logger.Infof("dir %s sent successfully to %s", dirPath, config.BootstrapNode)
+			}
 
 		}
 	}
