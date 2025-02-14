@@ -14,7 +14,7 @@ import (
 	"github.com/panjf2000/ants/v2"
 )
 
-// TaskFunc 是 Goroutine 池中执行的任务函数类型（保持原有定义）
+// TaskFunc 是 Goroutine 池中执行的任务函数类型
 type TaskFunc func()
 
 // TaskExecutor 是 Goroutine 池的接口
@@ -54,24 +54,35 @@ func NewAntsExecutor(size int, logger Logger) (TaskExecutor, error) {
 }
 
 // getFunctionName 获取函数的名称（通过反射）
+var functionNameCache sync.Map
+
 func getFunctionName(fn interface{}) string {
+	fnPointer := reflect.ValueOf(fn).Pointer()
+	if name, ok := functionNameCache.Load(fnPointer); ok {
+		return name.(string)
+	}
+
 	fnValue := reflect.ValueOf(fn)
 	if fnValue.Kind() != reflect.Func {
 		return "unknown"
 	}
 	fullName := runtime.FuncForPC(fnValue.Pointer()).Name()
 	if strings.Contains(fullName, "func") {
-		return "anonymous-" + fullName
+		fullName = "anonymous-" + fullName
 	}
 	parts := strings.Split(fullName, ".")
-	return parts[len(parts)-1]
+	name := parts[len(parts)-1]
+	functionNameCache.Store(fnPointer, name)
+	return name
 }
 
-// 任务包装函数（保持 TaskFunc 为函数类型）
+// 任务包装函数
 func (e *AntsExecutor) wrapTask(task TaskFunc, priority int) func() {
 	taskName := getFunctionName(task)
 	return func() {
 		start := time.Now()
+		atomic.AddInt32(&e.stats.TotalTasks, 1) // 更新总任务数
+
 		logMsg := fmt.Sprintf("Task %s started", taskName)
 		if priority > 0 {
 			logMsg = fmt.Sprintf("Task %s (priority %d) started", taskName, priority)
@@ -86,15 +97,28 @@ func (e *AntsExecutor) wrapTask(task TaskFunc, priority int) func() {
 					errMsg = fmt.Sprintf("Task %s (priority %d) panic: %v", taskName, priority, r)
 				}
 				e.logger.Error(errMsg)
-				atomic.AddInt32(&e.stats.FailedTasks, 1)
+				atomic.AddInt32(&e.stats.FailedTasks, 1) // 更新失败任务数
+			} else {
+				atomic.AddInt32(&e.stats.CompletedTasks, 1) // 更新成功任务数
 			}
+
+			// 更新任务执行时间统计
+			e.mu.Lock()
+			e.stats.TaskDuration = duration
+			if duration > e.stats.MaxTaskDuration {
+				e.stats.MaxTaskDuration = duration
+			}
+			e.stats.AvgTaskDuration = time.Duration(
+				(int64(e.stats.AvgTaskDuration)*int64(e.stats.CompletedTasks-1) + int64(duration)) / int64(e.stats.CompletedTasks),
+			)
+			e.mu.Unlock()
+
 			durationMsg := fmt.Sprintf("Task %s finished in %v", taskName, duration)
 			if priority > 0 {
 				durationMsg = fmt.Sprintf("Task %s (priority %d) finished in %v", taskName, priority, duration)
 			}
 			e.logger.Debug(durationMsg)
 			atomic.StoreInt32(&e.stats.Running, int32(e.pool.Running()))
-			e.stats.TaskDuration = duration
 		}()
 		task()
 	}
@@ -106,7 +130,7 @@ func (e *AntsExecutor) Submit(task TaskFunc) error {
 	return e.pool.Submit(wrappedTask)
 }
 
-// SubmitWithPriority 提交带优先级的任务（使用对象池优化）
+// SubmitWithPriority 提交带优先级的任务
 var taskPool = sync.Pool{
 	New: func() interface{} {
 		return &PriorityTask{}
@@ -114,21 +138,22 @@ var taskPool = sync.Pool{
 }
 
 func (e *AntsExecutor) SubmitWithPriority(task TaskFunc, priority int) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	wrappedTask := e.wrapTask(task, priority)
 
+	e.mu.Lock()
 	pt := taskPool.Get().(*PriorityTask)
-	defer taskPool.Put(pt)
 	pt.Task = wrappedTask
 	pt.Priority = priority
 	heap.Push(e.taskQueue, pt)
+	e.mu.Unlock()
 
+	e.mu.Lock()
 	if e.taskQueue.Len() > 0 {
 		pt := heap.Pop(e.taskQueue).(*PriorityTask)
+		e.mu.Unlock()
 		return e.pool.Submit(pt.Task)
 	}
+	e.mu.Unlock()
 	return nil
 }
 
@@ -138,14 +163,14 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 	defer cancel()
 
 	wrappedTask := e.wrapTask(task, 0)
-	resultChan := make(chan error, 1)
+	errChan := make(chan error, 1)
 
 	go func() {
-		resultChan <- e.pool.Submit(wrappedTask)
+		errChan <- e.pool.Submit(wrappedTask)
 	}()
 
 	select {
-	case err := <-resultChan:
+	case err := <-errChan:
 		return err
 	case <-ctx.Done():
 		atomic.AddInt32(&e.stats.TimeoutTasks, 1)
@@ -171,7 +196,7 @@ func (e *AntsExecutor) SubmitWithRetry(task TaskFunc, retries int) error {
 			if lastErr == nil {
 				return
 			}
-			time.Sleep(time.Duration(1<<i) * time.Second)
+			time.Sleep(time.Duration(1<<i) * time.Second) // 指数退避
 		}
 		e.logger.Errorf("Task %s failed after %d retries: %v", getFunctionName(task), retries, lastErr)
 	}
@@ -179,14 +204,14 @@ func (e *AntsExecutor) SubmitWithRetry(task TaskFunc, retries int) error {
 	return e.pool.Submit(e.wrapTask(wrappedFunc, 0))
 }
 
-// Resize 动态调整池大小（增加阈值限制）
+// Resize 动态调整池大小
 func (e *AntsExecutor) Resize(size int) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	if size < 1 {
 		return fmt.Errorf("pool size must be greater than 0")
 	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	currentSize := e.pool.Cap()
 	if abs(size-currentSize)*100/currentSize > 20 {
@@ -202,20 +227,27 @@ func abs(x int) int {
 	return x
 }
 
-// Stats 返回池状态（原子操作）
+// Stats 返回池状态
 func (e *AntsExecutor) Stats() PoolStats {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return PoolStats{
-		Running:      atomic.LoadInt32(&e.stats.Running),
-		Waiting:      int(e.pool.Waiting()),
-		TaskDuration: e.stats.TaskDuration,
-		FailedTasks:  atomic.LoadInt32(&e.stats.FailedTasks),
-		TimeoutTasks: atomic.LoadInt32(&e.stats.TimeoutTasks),
+		Running:         atomic.LoadInt32(&e.stats.Running),
+		Waiting:         int(e.pool.Waiting()),
+		TaskDuration:    e.stats.TaskDuration,
+		FailedTasks:     atomic.LoadInt32(&e.stats.FailedTasks),
+		TimeoutTasks:    atomic.LoadInt32(&e.stats.TimeoutTasks),
+		TotalTasks:      atomic.LoadInt32(&e.stats.TotalTasks),
+		CompletedTasks:  atomic.LoadInt32(&e.stats.CompletedTasks),
+		AvgTaskDuration: e.stats.AvgTaskDuration,
+		MaxTaskDuration: e.stats.MaxTaskDuration,
+		PoolSize:        e.pool.Cap(),
+		RetryTasks:      atomic.LoadInt32(&e.stats.RetryTasks),
+		QueueSize:       e.taskQueue.Len(),
 	}
 }
 
-// Release 释放池（带超时机制）
+// Release 释放池
 func (e *AntsExecutor) Release() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -233,16 +265,23 @@ func (e *AntsExecutor) Release() {
 	e.pool.Release()
 }
 
-// PoolStats 状态统计（原子字段）
+// PoolStats 状态统计
 type PoolStats struct {
-	Running      int32
-	Waiting      int
-	TaskDuration time.Duration
-	FailedTasks  int32
-	TimeoutTasks int32
+	Running         int32         // 当前正在运行的 Goroutine 数量
+	Waiting         int           // 当前正在等待执行的任务数量
+	TaskDuration    time.Duration // 最近一个任务的执行时间
+	FailedTasks     int32         // 失败的任务数量
+	TimeoutTasks    int32         // 超时的任务数量
+	TotalTasks      int32         // 提交的任务总数
+	CompletedTasks  int32         // 成功完成的任务数量
+	AvgTaskDuration time.Duration // 任务的平均执行时间
+	MaxTaskDuration time.Duration // 任务的最大执行时间
+	PoolSize        int           // Goroutine 池的当前大小
+	RetryTasks      int32         // 重试的任务数量
+	QueueSize       int           // 任务队列的当前大小
 }
 
-// PriorityQueue 及相关实现保持不变
+// PriorityQueue 及相关实现
 type PriorityTask struct {
 	Task     func()
 	Priority int
