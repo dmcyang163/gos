@@ -232,18 +232,21 @@ func (e *AntsExecutor) Stats() PoolStats {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return PoolStats{
-		Running:         atomic.LoadInt32(&e.stats.Running),
-		Waiting:         int(e.pool.Waiting()),
+		Running: atomic.LoadInt32(&e.stats.Running),
+		Waiting: int(e.pool.Waiting()),
+
+		TimeoutTasks:   atomic.LoadInt32(&e.stats.TimeoutTasks),
+		RetryTasks:     atomic.LoadInt32(&e.stats.RetryTasks),
+		FailedTasks:    atomic.LoadInt32(&e.stats.FailedTasks),
+		TotalTasks:     atomic.LoadInt32(&e.stats.TotalTasks),
+		CompletedTasks: atomic.LoadInt32(&e.stats.CompletedTasks),
+
 		TaskDuration:    e.stats.TaskDuration,
-		FailedTasks:     atomic.LoadInt32(&e.stats.FailedTasks),
-		TimeoutTasks:    atomic.LoadInt32(&e.stats.TimeoutTasks),
-		TotalTasks:      atomic.LoadInt32(&e.stats.TotalTasks),
-		CompletedTasks:  atomic.LoadInt32(&e.stats.CompletedTasks),
 		AvgTaskDuration: e.stats.AvgTaskDuration,
 		MaxTaskDuration: e.stats.MaxTaskDuration,
-		PoolSize:        e.pool.Cap(),
-		RetryTasks:      atomic.LoadInt32(&e.stats.RetryTasks),
-		QueueSize:       e.taskQueue.Len(),
+
+		PoolSize:  e.pool.Cap(),
+		QueueSize: e.taskQueue.Len(),
 	}
 }
 
@@ -267,18 +270,21 @@ func (e *AntsExecutor) Release() {
 
 // PoolStats 状态统计
 type PoolStats struct {
-	Running         int32         // 当前正在运行的 Goroutine 数量
-	Waiting         int           // 当前正在等待执行的任务数量
+	Running int32 // 当前正在运行的 Goroutine 数量
+	Waiting int   // 当前正在等待执行的任务数量
+
+	FailedTasks    int32 // 失败的任务数量
+	TimeoutTasks   int32 // 超时的任务数量
+	RetryTasks     int32 // 重试的任务数量
+	TotalTasks     int32 // 提交的任务总数
+	CompletedTasks int32 // 成功完成的任务数量
+
 	TaskDuration    time.Duration // 最近一个任务的执行时间
-	FailedTasks     int32         // 失败的任务数量
-	TimeoutTasks    int32         // 超时的任务数量
-	TotalTasks      int32         // 提交的任务总数
-	CompletedTasks  int32         // 成功完成的任务数量
 	AvgTaskDuration time.Duration // 任务的平均执行时间
 	MaxTaskDuration time.Duration // 任务的最大执行时间
-	PoolSize        int           // Goroutine 池的当前大小
-	RetryTasks      int32         // 重试的任务数量
-	QueueSize       int           // 任务队列的当前大小
+
+	QueueSize int // 任务队列的当前大小
+	PoolSize  int // Goroutine 池的当前大小
 }
 
 // PriorityQueue 及相关实现
