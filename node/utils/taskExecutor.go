@@ -1,4 +1,3 @@
-// taskExecutor.go
 package utils
 
 import (
@@ -74,28 +73,41 @@ func getFunctionName(fn interface{}) string {
 	return parts[len(parts)-1]
 }
 
-// Submit 提交任务到 Goroutine 池
-func (e *AntsExecutor) Submit(task TaskFunc) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	// 获取任务函数的名称
-	taskName := getFunctionName(task)
-
-	wrappedTask := func() {
+// 通用的任务包装函数
+func (e *AntsExecutor) wrapTask(task TaskFunc, taskName string, priority int) func() {
+	return func() {
 		start := time.Now()
-		e.logger.Debugf("Task %s started", taskName)
+		logMsg := fmt.Sprintf("Task %s started", taskName)
+		if priority > 0 {
+			logMsg = fmt.Sprintf("Task %s (priority %d) started", taskName, priority)
+		}
+		e.logger.Debug(logMsg)
+
 		defer func() {
+			duration := time.Since(start)
 			if r := recover(); r != nil {
-				e.logger.Errorf("Task %s panic: %v", taskName, r)
+				errMsg := fmt.Sprintf("Task %s panic: %v", taskName, r)
+				if priority > 0 {
+					errMsg = fmt.Sprintf("Task %s (priority %d) panic: %v", taskName, priority, r)
+				}
+				e.logger.Error(errMsg)
 				e.stats.FailedTasks++
 			}
-			e.stats.TaskDuration = time.Since(start)
-			e.logger.Debugf("Task %s finished in %v", taskName, e.stats.TaskDuration)
+			durationMsg := fmt.Sprintf("Task %s finished in %v", taskName, duration)
+			if priority > 0 {
+				durationMsg = fmt.Sprintf("Task %s (priority %d) finished in %v", taskName, priority, duration)
+			}
+			e.logger.Debug(durationMsg)
+			e.stats.TaskDuration = duration
 		}()
 		task()
 	}
+}
 
+// Submit 提交任务到 Goroutine 池
+func (e *AntsExecutor) Submit(task TaskFunc) error {
+	taskName := getFunctionName(task)
+	wrappedTask := e.wrapTask(task, taskName, 0)
 	return e.pool.Submit(wrappedTask)
 }
 
@@ -104,22 +116,8 @@ func (e *AntsExecutor) SubmitWithPriority(task TaskFunc, priority int) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// 获取任务函数的名称
 	taskName := getFunctionName(task)
-
-	wrappedTask := func() {
-		start := time.Now()
-		e.logger.Infof("Task %s (priority %d) started", taskName, priority)
-		defer func() {
-			if r := recover(); r != nil {
-				e.logger.Errorf("Task %s (priority %d) panic: %v", taskName, priority, r)
-				e.stats.FailedTasks++
-			}
-			e.stats.TaskDuration = time.Since(start)
-			e.logger.Infof("Task %s (priority %d) finished in %v", taskName, priority, e.stats.TaskDuration)
-		}()
-		task()
-	}
+	wrappedTask := e.wrapTask(task, taskName, priority)
 
 	// 将任务添加到优先级队列
 	heap.Push(e.taskQueue, &PriorityTask{Task: wrappedTask, Priority: priority})
@@ -137,8 +135,8 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// 获取任务函数的名称
 	taskName := getFunctionName(task)
+	wrappedTask := e.wrapTask(task, taskName, 0)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -146,19 +144,7 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 
 	go func() {
 		defer wg.Done()
-		err = e.pool.Submit(func() {
-			start := time.Now()
-			e.logger.Infof("Task %s started", taskName)
-			defer func() {
-				if r := recover(); r != nil {
-					e.logger.Errorf("Task %s panic: %v", taskName, r)
-					e.stats.FailedTasks++
-				}
-				e.stats.TaskDuration = time.Since(start)
-				e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
-			}()
-			task()
-		})
+		err = e.pool.Submit(wrappedTask)
 	}()
 
 	select {
@@ -174,24 +160,12 @@ func (e *AntsExecutor) SubmitWithTimeout(task TaskFunc, timeout time.Duration) e
 
 // SubmitWithRetry 提交带重试的任务到 Goroutine 池
 func (e *AntsExecutor) SubmitWithRetry(task TaskFunc, retries int) error {
-	// 获取任务函数的名称
 	taskName := getFunctionName(task)
 
 	var lastErr error
 	for i := 0; i < retries; i++ {
-		err := e.pool.Submit(func() {
-			start := time.Now()
-			e.logger.Infof("Task %s started (retry %d/%d)", taskName, i+1, retries)
-			defer func() {
-				if r := recover(); r != nil {
-					e.logger.Errorf("Task %s panic: %v", taskName, r)
-					e.stats.FailedTasks++
-				}
-				e.stats.TaskDuration = time.Since(start)
-				e.logger.Infof("Task %s finished in %v", taskName, e.stats.TaskDuration)
-			}()
-			task()
-		})
+		wrappedTask := e.wrapTask(task, taskName, 0)
+		err := e.pool.Submit(wrappedTask)
 		if err == nil {
 			return nil
 		}
