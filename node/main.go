@@ -10,7 +10,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/pflag"
 
-	. "node/utils"
+	"node/utils"
 )
 
 func main() {
@@ -39,10 +39,10 @@ func main() {
 	}
 
 	// 初始化日志模块
-	logger := NewLogrusLogger("log/node.log", nil)
+	logger := utils.NewLogrusLogger("log/node.log", nil)
 
 	// 初始化 Goroutine 池
-	executor, err := NewAntsExecutor(100, logger)
+	executor, err := utils.NewAntsExecutor(100, logger)
 	if err != nil {
 		fmt.Printf("Error creating executor: %v\n", err)
 		return
@@ -53,7 +53,7 @@ func main() {
 	node := NewNode(config, logger, executor)
 
 	// 启动日志级别 API
-	StartLogLevelAPI(logger)
+	utils.StartLogLevelAPI(logger)
 
 	// 启动服务器和其他协程
 	go node.startServer()

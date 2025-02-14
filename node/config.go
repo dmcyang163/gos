@@ -4,18 +4,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	. "node/utils"
+	"node/utils"
 	"os"
 )
 
 // Config represents the configuration for the node.
 type Config struct {
-	Port              string    `json:"port"`
-	BootstrapNode     string    `json:"bootstrap_node"`
-	MaxConns          int       `json:"max_conns"`
-	DiscoveryInterval int       `json:"discovery_interval"`
-	HeartbeatInterval int       `json:"heartbeat_interval"`
-	Log               LogConfig `json:"log"`
+	Port              string          `json:"port"`
+	BootstrapNode     string          `json:"bootstrap_node"`
+	MaxConns          int             `json:"max_conns"`
+	DiscoveryInterval int             `json:"discovery_interval"`
+	HeartbeatInterval int             `json:"heartbeat_interval"`
+	Log               utils.LogConfig `json:"log"`
 }
 
 // ConfigLoader 是配置文件加载器的接口

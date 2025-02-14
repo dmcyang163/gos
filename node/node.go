@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	. "node/utils"
+	"node/utils"
 
 	"github.com/google/uuid"
 	"github.com/patrickmn/go-cache"
@@ -16,19 +16,19 @@ import (
 // Node represents a peer in the P2P network.
 type Node struct {
 	Port          string
-	logger        Logger // 系统日志
-	chatLogger    Logger // 聊天日志
+	logger        utils.Logger // 系统日志
+	chatLogger    utils.Logger // 聊天日志
 	config        *Config
 	User          *User        // 用户信息
 	processedMsgs *cache.Cache // 使用 go-cache 存储已处理的消息 ID
 	net           *NetworkManager
 	peers         *PeerManager
 	router        *MessageRouter
-	executor      TaskExecutor
+	executor      utils.TaskExecutor
 }
 
 // NewNode creates a new Node instance.
-func NewNode(config *Config, logger Logger, executor TaskExecutor) *Node {
+func NewNode(config *Config, logger utils.Logger, executor utils.TaskExecutor) *Node {
 
 	user := NewUser("")
 
@@ -41,8 +41,8 @@ func NewNode(config *Config, logger Logger, executor TaskExecutor) *Node {
 
 	return &Node{
 		Port:       config.Port,
-		logger:     logger,                             // 系统日志
-		chatLogger: NewChatLogger("log/chat.log", nil), // 聊天日志
+		logger:     logger,                                   // 系统日志
+		chatLogger: utils.NewChatLogger("log/chat.log", nil), // 聊天日志
 		config:     config,
 		User:       user,
 

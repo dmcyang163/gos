@@ -3,18 +3,18 @@ package main
 
 import (
 	"net"
-	. "node/utils"
+	"node/utils"
 )
 
 // MessageRouter routes messages to the appropriate handler.
 type MessageRouter struct {
 	handlers map[string]MessageHandler
-	logger   Logger
-	executor TaskExecutor
+	logger   utils.Logger
+	executor utils.TaskExecutor
 }
 
 // NewMessageRouter creates a new MessageRouter instance and registers all handlers.
-func NewMessageRouter(logger Logger, executor TaskExecutor) *MessageRouter {
+func NewMessageRouter(logger utils.Logger, executor utils.TaskExecutor) *MessageRouter {
 	router := &MessageRouter{
 		handlers: make(map[string]MessageHandler),
 		logger:   logger,

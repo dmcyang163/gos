@@ -10,7 +10,6 @@ import (
 	"io"
 	"net"
 	"node/utils"
-	. "node/utils"
 	"os"
 	"sync"
 	"time"
@@ -21,12 +20,12 @@ type NetworkManager struct {
 	Conns          sync.Map
 	sendBufferPool *sync.Pool
 	readBufferPool *sync.Pool
-	logger         Logger
-	executor       TaskExecutor
+	logger         utils.Logger
+	executor       utils.TaskExecutor
 }
 
 // NewNetworkManager creates a new NetworkManager instance.
-func NewNetworkManager(logger Logger, executor TaskExecutor) *NetworkManager {
+func NewNetworkManager(logger utils.Logger, executor utils.TaskExecutor) *NetworkManager {
 	return &NetworkManager{
 		Conns:          sync.Map{},
 		sendBufferPool: utils.NewBufferPool(),

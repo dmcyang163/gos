@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	. "node/utils"
+	"node/utils"
 	"sync"
 	"time"
 )
@@ -19,12 +19,12 @@ type PeerInfo struct {
 // PeerManager handles peer discovery and management.
 type PeerManager struct {
 	KnownPeers sync.Map
-	logger     Logger
-	executor   TaskExecutor
+	logger     utils.Logger
+	executor   utils.TaskExecutor
 }
 
 // NewPeerManager 创建一个新的 PeerManager
-func NewPeerManager(logger Logger, executor TaskExecutor) *PeerManager {
+func NewPeerManager(logger utils.Logger, executor utils.TaskExecutor) *PeerManager {
 	return &PeerManager{
 		KnownPeers: sync.Map{},
 		logger:     logger,
