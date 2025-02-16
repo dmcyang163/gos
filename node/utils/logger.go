@@ -75,52 +75,73 @@ func (f *OrderedJSONFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	return append(serialized, '\n'), nil
 }
 
-// AsyncHook 是一个自定义的 logrus Hook，用于异步处理日志
-type AsyncHook struct {
-	logChan chan *logrus.Entry // 用于传递日志的 Channel
+// AsyncWriter 是一个异步的 io.Writer，用于异步处理日志输出
+type AsyncWriter struct {
+	logChan chan *logrus.Entry // 用于传递日志数据的 Channel
 	wg      sync.WaitGroup     // 用于等待 Goroutine 结束
+	output  io.Writer          // 实际输出目标（如文件或控制台）
+	logger  *logrus.Logger     // 保存 logger 实例
 }
 
-// NewAsyncHook 创建一个新的 AsyncHook
-func NewAsyncHook(bufferSize int) *AsyncHook {
-	hook := &AsyncHook{
+// NewAsyncWriter 创建一个新的 AsyncWriter
+func NewAsyncWriter(bufferSize int, output io.Writer, logger *logrus.Logger) *AsyncWriter {
+	writer := &AsyncWriter{
 		logChan: make(chan *logrus.Entry, bufferSize),
+		output:  output,
+		logger:  logger, // 保存 logger
 	}
-	hook.wg.Add(1)
-	go hook.processLogs() // 启动 Goroutine 处理日志
-	return hook
+	writer.wg.Add(1)
+	go writer.processLogs() // 启动 Goroutine 处理日志
+	return writer
 }
 
-// Fire 实现 logrus.Hook 接口，将日志发送到 Channel
-func (hook *AsyncHook) Fire(entry *logrus.Entry) error {
-	hook.logChan <- entry
-	return nil
-}
+// Write 实现 io.Writer 接口，将日志数据发送到 Channel
+func (w *AsyncWriter) Write(p []byte) (int, error) {
+	// 将 []byte 转换为 logrus.Entry
+	var entry logrus.Entry
+	err := json.Unmarshal(p, &entry)
+	if err != nil {
+		fmt.Printf("Failed to unmarshal log entry: %v\n", err)
+		return 0, err
+	}
 
-// Levels 实现 logrus.Hook 接口，指定需要处理的日志级别
-func (hook *AsyncHook) Levels() []logrus.Level {
-	return logrus.AllLevels
+	// 创建一个新的 Entry，并使用原始数据
+	newEntry := logrus.NewEntry(w.logger) // 使用保存的 logger
+	newEntry.Level = entry.Level
+	newEntry.Time = entry.Time
+	newEntry.Message = entry.Message
+	newEntry.Data = entry.Data
+
+	w.logChan <- newEntry
+	return len(p), nil
 }
 
 // processLogs 处理日志，异步写入
-func (hook *AsyncHook) processLogs() {
-	defer hook.wg.Done()
-	for entry := range hook.logChan {
-		// 检查日志级别
+func (w *AsyncWriter) processLogs() {
+	defer w.wg.Done()
+	for entry := range w.logChan {
+		// 将日志写入到实际输出目标
+		data, err := entry.Logger.Formatter.Format(entry)
+		if err != nil {
+			fmt.Printf("Failed to format log entry: %v\n", err)
+			continue
+		}
+
+		if _, err := w.output.Write(data); err != nil {
+			fmt.Printf("Failed to write log entry: %v\n", err)
+		}
+
+		// 检查日志级别，发送告警
 		if entry.Level == logrus.ErrorLevel {
 			sendAlert(entry.Message) // 发送告警
 		}
-
-		// 写入日志
-		// data, err := entry.Logger.Formatter.Format(entry)
-		// if err != nil {
-		// 	fmt.Printf("Failed to format log entry: %v\n", err)
-		// 	continue
-		// }
-		// if _, err := entry.Logger.Out.Write(data); err != nil {
-		// 	fmt.Printf("Failed to write log entry: %v\n", err)
-		// }
 	}
+}
+
+// Close 关闭 AsyncWriter，等待所有日志处理完成
+func (w *AsyncWriter) Close() {
+	close(w.logChan) // 关闭 Channel
+	w.wg.Wait()      // 等待 Goroutine 结束
 }
 
 func sendAlert(message string) {
@@ -128,22 +149,19 @@ func sendAlert(message string) {
 	fmt.Printf("ALERT: %s\n", message)
 }
 
-// Close 关闭 Hook，等待所有日志处理完成
-func (hook *AsyncHook) Close() {
-	close(hook.logChan) // 关闭 Channel
-	hook.wg.Wait()      // 等待 Goroutine 结束
-}
-
 func configureLogger(output io.Writer, config *LogConfig) *logrus.Logger {
 	logger := logrus.New()
 
-	logger.SetOutput(output)
-
-	logger.SetFormatter(&OrderedJSONFormatter{
+	formatter := &OrderedJSONFormatter{
 		JSONFormatter: logrus.JSONFormatter{
 			TimestampFormat: "2006-01-02 15:04:05",
 		},
-	})
+	}
+	logger.SetFormatter(formatter)
+
+	// 使用 AsyncWriter 包装实际的输出目标
+	asyncWriter := NewAsyncWriter(1000, output, logger) // 传递 logger
+	logger.SetOutput(asyncWriter)
 
 	switch config.Level {
 	case "debug":
@@ -158,13 +176,10 @@ func configureLogger(output io.Writer, config *LogConfig) *logrus.Logger {
 		logger.SetLevel(logrus.InfoLevel)
 	}
 
-	asyncHook := NewAsyncHook(1000)
-	logger.AddHook(asyncHook)
-
-	// 在程序退出时关闭 Hook
+	// 在程序退出时关闭 AsyncWriter
 	go func() {
 		<-make(chan struct{}) // 阻塞，直到程序退出
-		asyncHook.Close()
+		asyncWriter.Close()
 	}()
 
 	return logger
@@ -184,9 +199,10 @@ func NewLogrusLogger(filename string, config *LogConfig) Logger {
 		Compress:   config.Compress,
 	}
 
+	// 使用 AsyncWriter 包装日志输出目标
 	logger := configureLogger(
-		io.MultiWriter(os.Stdout, logFile),
-		config, // 传递配置
+		io.MultiWriter(os.Stdout, logFile), // 同时输出到控制台和文件
+		config,
 	)
 	entry := logrus.NewEntry(logger)
 	return &LogrusLogger{entry: entry}
@@ -206,9 +222,10 @@ func NewChatLogger(filename string, config *LogConfig) Logger {
 		Compress:   config.Compress,
 	}
 
+	// 使用 AsyncWriter 包装日志输出目标
 	logger := configureLogger(
 		chatLogFile,
-		config, // 传递配置
+		config,
 	)
 	entry := logrus.NewEntry(logger)
 	return &LogrusLogger{entry: entry}
