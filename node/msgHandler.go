@@ -83,7 +83,7 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 
 		// 记录聊天消息到独立的日志文件
 		n.chatLogger.WithFields(map[string]interface{}{
-			"timestamp": time.Now().Format(time.RFC3339),
+			"timestamp": time.Now().Format("2006-01-02 15:04:05.000"),
 			"sender":    msg.Sender,
 			"address":   msg.Address,
 			"message":   msg.Data,
