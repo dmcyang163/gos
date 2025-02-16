@@ -113,6 +113,11 @@ func (e *OrderedJSONEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.F
 	data.Set("timestamp", entry.Time.Format(timeFormat))
 	data.Set("message", entry.Message)
 
+	// 添加 caller 信息
+	if entry.Caller.Defined {
+		data.Set("caller", entry.Caller.String())
+	}
+
 	// 添加其他字段
 	for _, field := range fields {
 		data.Set(field.Key, field.Interface)
@@ -161,7 +166,7 @@ func configureLogger(output io.Writer, config *LogConfig) *zap.Logger {
 		EncodeLevel:    zapcore.LowercaseLevelEncoder,
 		EncodeTime:     CustomTimeEncoder, // 使用自定义时间编码器
 		EncodeDuration: zapcore.SecondsDurationEncoder,
-		EncodeCaller:   zapcore.ShortCallerEncoder,
+		EncodeCaller:   nil, // 关闭默认的 CallerEncoder
 	}
 
 	core := zapcore.NewCore(
@@ -171,7 +176,7 @@ func configureLogger(output io.Writer, config *LogConfig) *zap.Logger {
 	)
 
 	// 使用 zap.New 创建 logger，并添加调用者信息
-	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+	logger := zap.New(core, zap.AddCallerSkip(2), zap.AddStacktrace(zapcore.ErrorLevel))
 	return logger
 }
 
