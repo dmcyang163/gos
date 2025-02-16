@@ -284,7 +284,7 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 
 		// 调用 SendFile 发送文件，并传递完整相对路径
 		if err := n.SendFile(peerAddr, filePath, fullRelPath); err != nil {
-			return fmt.Errorf("failed to send file %s: %w", filePath, err)
+			return err
 		}
 
 		n.logger.Infof("Sent file: %s", fullRelPath)

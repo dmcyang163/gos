@@ -112,14 +112,14 @@ func (hook *AsyncHook) processLogs() {
 		}
 
 		// 写入日志
-		data, err := entry.Logger.Formatter.Format(entry)
-		if err != nil {
-			fmt.Printf("Failed to format log entry: %v\n", err)
-			continue
-		}
-		if _, err := entry.Logger.Out.Write(data); err != nil {
-			fmt.Printf("Failed to write log entry: %v\n", err)
-		}
+		// data, err := entry.Logger.Formatter.Format(entry)
+		// if err != nil {
+		// 	fmt.Printf("Failed to format log entry: %v\n", err)
+		// 	continue
+		// }
+		// if _, err := entry.Logger.Out.Write(data); err != nil {
+		// 	fmt.Printf("Failed to write log entry: %v\n", err)
+		// }
 	}
 }
 

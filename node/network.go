@@ -140,9 +140,10 @@ func (nm *NetworkManager) sendChunkWithRetry(conn net.Conn, fileInfo os.FileInfo
 				nm.logger.WithFields(map[string]interface{}{
 					"file_name": fileInfo.Name(),
 					"chunk_id":  chunkID,
+					"retries":   retries,
 					"error":     err,
 				}).Error("Failed to send file chunk after retries")
-				return fmt.Errorf("failed to send file chunk after %d retries: %w", retries, err)
+				return err
 			}
 			time.Sleep(100 * time.Millisecond) // 等待 100ms 后重试
 			continue
@@ -203,7 +204,7 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 			"remote_addr": conn.RemoteAddr().String(),
 			"error":       err,
 		}).Error("Failed to read message length")
-		return Message{}, fmt.Errorf("error reading message length: %w", err)
+		return Message{}, err
 	}
 
 	// 获取缓冲区

@@ -44,7 +44,7 @@ func main() {
 	// 初始化 Goroutine 池
 	executor, err := utils.NewAntsExecutor(100, logger)
 	if err != nil {
-		fmt.Printf("Error creating executor: %v\n", err)
+		logger.Errorf("Error creating executor: %v", err)
 		return
 	}
 	defer executor.Release()
@@ -76,13 +76,12 @@ func main() {
 			// 	logger.Infof("File %s sent successfully to %s", filePath, config.BootstrapNode)
 			// }
 
-			dirPath := "D:/young/gos/node/test-data" // 要发送的目录路径
-			if err := node.SendDir("127.0.0.1:1234", dirPath); err != nil {
-				logger.Errorf("Failed to send dir: %v", err)
-			} else {
-				logger.Infof("dir %s sent successfully to %s", dirPath, config.BootstrapNode)
-			}
-
+			// dirPath := "D:/gos/nodes/node/test-data" // 要发送的目录路径
+			// if err := node.SendDir("127.0.0.1:1234", dirPath); err != nil {
+			// 	logger.Errorf("Failed to send dir: %v", err)
+			// } else {
+			// 	logger.Infof("dir %s sent successfully to %s", dirPath, config.BootstrapNode)
+			// }
 		}
 	}
 
@@ -92,6 +91,5 @@ func main() {
 		message := scanner.Text()
 		color.Green("You: %s\n", message)
 		node.BroadcastMessage(message)
-
 	}
 }
