@@ -56,12 +56,21 @@ var defaultLogConfig = LogConfig{
 	APIPort:    "8081",
 }
 
-// NewLogger 创建一个新的 Logger 实例
-func NewLogger(filename string, config *LogConfig, consoleOutput bool) Logger {
-	// 检查 config 是否为 nil
-	if config == nil {
-		// 如果 config 为 nil，则使用默认配置
-		config = &defaultLogConfig
+// NewLogger 创建一个新的 Logger 实例 (使用可变参数)
+func NewLogger(filename string, options ...interface{}) Logger {
+	config := defaultLogConfig
+	consoleOutput := false
+
+	// 解析可变参数
+	for _, option := range options {
+		switch v := option.(type) {
+		case *LogConfig:
+			config = *v // 复制 config 的值
+		case bool:
+			consoleOutput = v
+		default:
+			fmt.Printf("Invalid option type: %T\n", option)
+		}
 	}
 
 	logFile := &lumberjack.Logger{
@@ -84,7 +93,7 @@ func NewLogger(filename string, config *LogConfig, consoleOutput bool) Logger {
 		output = zapcore.NewMultiWriteSyncer(zapcore.AddSync(logFile))
 	}
 
-	logger := configureLogger(output, config)
+	logger := configureLogger(output, &config)
 	return &ZapLogger{logger: logger}
 }
 
