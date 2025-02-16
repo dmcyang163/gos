@@ -103,7 +103,7 @@ type OrderedJSONEncoder struct {
 }
 
 const (
-	timeFormat = "2006-01-02 15:04:05" // 定义时间格式常量
+	timeFormat = "2006-01-02 15:04:05.000" // 定义时间格式常量
 )
 
 var bufferPool = sync.Pool{
