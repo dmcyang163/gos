@@ -39,7 +39,7 @@ func main() {
 	}
 
 	// 初始化日志模块
-	logger := utils.NewLogrusLogger("log/node.log", nil)
+	logger := utils.NewZapLogger("log/node.log", nil)
 
 	// 初始化 Goroutine 池
 	executor, err := utils.NewAntsExecutor(100, logger)
