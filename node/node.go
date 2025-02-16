@@ -40,8 +40,8 @@ func NewNode(config *Config, logger utils.Logger, executor utils.TaskExecutor) *
 
 	return &Node{
 		Port:       config.Port,
-		logger:     logger,                                   // 系统日志
-		chatLogger: utils.NewChatLogger("log/chat.log", nil), // 聊天日志
+		logger:     logger,                                      // 系统日志
+		chatLogger: utils.NewLogger("log/chat.log", nil, false), // 聊天日志
 		config:     config,
 		User:       user,
 

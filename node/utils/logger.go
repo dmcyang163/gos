@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings" // Import strings package
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +17,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+// Logger 接口
 type Logger interface {
 	Debugf(format string, args ...interface{})
 	Debug(args ...interface{})
@@ -30,8 +31,19 @@ type Logger interface {
 	WithError(err error) Logger
 }
 
+// ZapLogger 结构体
 type ZapLogger struct {
 	logger *zap.Logger
+}
+
+// LogConfig 结构体
+type LogConfig struct {
+	Level      string `json:"level"`
+	MaxSize    int    `json:"max_size"`
+	MaxBackups int    `json:"max_backups"`
+	MaxAge     int    `json:"max_age"`
+	Compress   bool   `json:"compress"`
+	APIPort    string `json:"api_port"`
 }
 
 // 默认日志配置
@@ -44,15 +56,39 @@ var defaultLogConfig = LogConfig{
 	APIPort:    "8081",
 }
 
-type LogConfig struct {
-	Level      string `json:"level"`
-	MaxSize    int    `json:"max_size"`
-	MaxBackups int    `json:"max_backups"`
-	MaxAge     int    `json:"max_age"`
-	Compress   bool   `json:"compress"`
-	APIPort    string `json:"api_port"`
+// NewLogger 创建一个新的 Logger 实例
+func NewLogger(filename string, config *LogConfig, consoleOutput bool) Logger {
+	// 检查 config 是否为 nil
+	if config == nil {
+		// 如果 config 为 nil，则使用默认配置
+		config = &defaultLogConfig
+	}
+
+	logFile := &lumberjack.Logger{
+		Filename:   filename,
+		MaxSize:    config.MaxSize,
+		MaxBackups: config.MaxBackups,
+		MaxAge:     config.MaxAge,
+		Compress:   config.Compress,
+	}
+
+	var output io.Writer
+	if consoleOutput {
+		// 同时输出到控制台和文件
+		output = zapcore.NewMultiWriteSyncer(
+			zapcore.AddSync(os.Stdout),
+			zapcore.AddSync(logFile),
+		)
+	} else {
+		// 只输出到文件
+		output = zapcore.NewMultiWriteSyncer(zapcore.AddSync(logFile))
+	}
+
+	logger := configureLogger(output, config)
+	return &ZapLogger{logger: logger}
 }
 
+// OrderedJSONEncoder 结构体
 type OrderedJSONEncoder struct {
 	zapcore.Encoder
 }
@@ -63,16 +99,17 @@ const (
 
 var bufferPool = sync.Pool{
 	New: func() interface{} {
-		return new(strings.Builder) // Use strings.Builder
+		return new(strings.Builder) // 使用 strings.Builder
 	},
 }
 
+// EncodeEntry 方法
 func (e *OrderedJSONEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
 	// 创建一个有序的 map
 	data := orderedmap.New()
 
 	data.Set("level", entry.Level.String())
-	// Use custom format for timestamp
+	// 使用自定义格式的时间戳
 	data.Set("timestamp", entry.Time.Format(timeFormat))
 	data.Set("message", entry.Message)
 
@@ -87,9 +124,9 @@ func (e *OrderedJSONEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.F
 		return nil, fmt.Errorf("failed to marshal fields to JSON: %w", err)
 	}
 
-	// Get buffer from pool
+	// 从 pool 中获取 buffer
 	buf := bufferPool.Get().(*strings.Builder)
-	buf.Reset() // Reset buffer before use
+	buf.Reset() // 重置 buffer
 	defer bufferPool.Put(buf)
 
 	buf.WriteString(string(serialized))
@@ -100,6 +137,17 @@ func (e *OrderedJSONEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.F
 	return b, nil
 }
 
+// CustomTimeEncoder 自定义时间编码器
+func CustomTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+	enc.AppendString(t.Format(timeFormat))
+}
+
+// NewOrderedJSONEncoder creates a new OrderedJSONEncoder.
+func NewOrderedJSONEncoder(cfg zapcore.EncoderConfig) zapcore.Encoder {
+	return &OrderedJSONEncoder{Encoder: zapcore.NewJSONEncoder(cfg)}
+}
+
+// configureLogger 函数
 func configureLogger(output io.Writer, config *LogConfig) *zap.Logger {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "timestamp",
@@ -111,13 +159,13 @@ func configureLogger(output io.Writer, config *LogConfig) *zap.Logger {
 		StacktraceKey:  "stacktrace",
 		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     CustomTimeEncoder, // Use custom time encoder
+		EncodeTime:     CustomTimeEncoder, // 使用自定义时间编码器
 		EncodeDuration: zapcore.SecondsDurationEncoder,
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
 	core := zapcore.NewCore(
-		&OrderedJSONEncoder{Encoder: zapcore.NewJSONEncoder(encoderConfig)},
+		NewOrderedJSONEncoder(encoderConfig),
 		zapcore.AddSync(output),
 		zapcore.Level(config.getZapLevel()),
 	)
@@ -127,11 +175,61 @@ func configureLogger(output io.Writer, config *LogConfig) *zap.Logger {
 	return logger
 }
 
-// CustomTimeEncoder 自定义时间编码器
-func CustomTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-	enc.AppendString(t.Format(timeFormat))
+// Debugf 方法
+func (l *ZapLogger) Debugf(format string, args ...interface{}) {
+	l.logger.Sugar().Debugf(format, args...)
 }
 
+// Debug 方法
+func (l *ZapLogger) Debug(args ...interface{}) {
+	l.logger.Sugar().Debug(args...)
+}
+
+// Infof 方法
+func (l *ZapLogger) Infof(format string, args ...interface{}) {
+	l.logger.Sugar().Infof(format, args...)
+}
+
+// Info 方法
+func (l *ZapLogger) Info(args ...interface{}) {
+	l.logger.Sugar().Info(args...)
+}
+
+// Warnf 方法
+func (l *ZapLogger) Warnf(format string, args ...interface{}) {
+	l.logger.Sugar().Warnf(format, args...)
+}
+
+// Warn 方法
+func (l *ZapLogger) Warn(args ...interface{}) {
+	l.logger.Sugar().Warn(args...)
+}
+
+// Errorf 方法
+func (l *ZapLogger) Errorf(format string, args ...interface{}) {
+	l.logger.Sugar().Errorf(format, args...)
+}
+
+// Error 方法
+func (l *ZapLogger) Error(args ...interface{}) {
+	l.logger.Sugar().Error(args...)
+}
+
+// WithFields 方法
+func (l *ZapLogger) WithFields(fields map[string]interface{}) Logger {
+	zapFields := make([]zap.Field, 0, len(fields))
+	for key, value := range fields {
+		zapFields = append(zapFields, zap.Any(key, value))
+	}
+	return &ZapLogger{logger: l.logger.With(zapFields...)}
+}
+
+// WithError 方法
+func (l *ZapLogger) WithError(err error) Logger {
+	return &ZapLogger{logger: l.logger.With(zap.Error(err))}
+}
+
+// getZapLevel 方法
 func (c *LogConfig) getZapLevel() zapcore.Level {
 	switch c.Level {
 	case "debug":
@@ -145,94 +243,6 @@ func (c *LogConfig) getZapLevel() zapcore.Level {
 	default:
 		return zapcore.InfoLevel
 	}
-}
-
-// NewZapLogger 创建一个新的 ZapLogger 实例
-func NewZapLogger(filename string, config *LogConfig) Logger {
-	if config == nil {
-		config = &defaultLogConfig // 使用默认配置
-	}
-
-	logFile := &lumberjack.Logger{
-		Filename:   filename,
-		MaxSize:    config.MaxSize,
-		MaxBackups: config.MaxBackups,
-		MaxAge:     config.MaxAge,
-		Compress:   config.Compress,
-	}
-
-	// 同时输出到控制台和文件
-	output := zapcore.NewMultiWriteSyncer(
-		zapcore.AddSync(os.Stdout),
-		zapcore.AddSync(logFile),
-	)
-
-	logger := configureLogger(output, config)
-	return &ZapLogger{logger: logger}
-}
-
-// NewChatLogger 创建一个新的 ChatLogger 实例
-func NewChatLogger(filename string, config *LogConfig) Logger {
-	if config == nil {
-		config = &defaultLogConfig // 使用默认配置
-	}
-
-	chatLogFile := &lumberjack.Logger{
-		Filename:   filename, // 聊天日志文件名
-		MaxSize:    config.MaxSize,
-		MaxBackups: config.MaxBackups,
-		MaxAge:     config.MaxAge,
-		Compress:   config.Compress,
-	}
-
-	// 输出到聊天日志文件
-	output := zapcore.NewMultiWriteSyncer(zapcore.AddSync(chatLogFile))
-	logger := configureLogger(output, config)
-	return &ZapLogger{logger: logger}
-}
-
-func (l *ZapLogger) Debugf(format string, args ...interface{}) {
-	l.logger.Sugar().Debugf(format, args...)
-}
-
-func (l *ZapLogger) Debug(args ...interface{}) {
-	l.logger.Sugar().Debug(args...)
-}
-
-func (l *ZapLogger) Infof(format string, args ...interface{}) {
-	l.logger.Sugar().Infof(format, args...)
-}
-
-func (l *ZapLogger) Info(args ...interface{}) {
-	l.logger.Sugar().Info(args...)
-}
-
-func (l *ZapLogger) Warnf(format string, args ...interface{}) {
-	l.logger.Sugar().Warnf(format, args...)
-}
-
-func (l *ZapLogger) Warn(args ...interface{}) {
-	l.logger.Sugar().Warn(args...)
-}
-
-func (l *ZapLogger) Errorf(format string, args ...interface{}) {
-	l.logger.Sugar().Errorf(format, args...)
-}
-
-func (l *ZapLogger) Error(args ...interface{}) {
-	l.logger.Sugar().Error(args...)
-}
-
-func (l *ZapLogger) WithFields(fields map[string]interface{}) Logger {
-	zapFields := make([]zap.Field, 0, len(fields))
-	for key, value := range fields {
-		zapFields = append(zapFields, zap.Any(key, value))
-	}
-	return &ZapLogger{logger: l.logger.With(zapFields...)}
-}
-
-func (l *ZapLogger) WithError(err error) Logger {
-	return &ZapLogger{logger: l.logger.With(zap.Error(err))}
 }
 
 // SetLogLevel dynamically sets the log level.
