@@ -13,6 +13,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"github.com/jxskiss/base62"
 	"github.com/sirupsen/logrus"
 )
 
@@ -248,5 +249,10 @@ func shouldReplyToMessage(msg Message) bool {
 
 // generateMessageID generates a unique message ID.
 func generateMessageID() string {
-	return uuid.New().String()
+	// return uuid.New().String()
+
+	uuidBytes := uuid.New()
+	encoded := base62.Encode(uuidBytes[:])
+	// 将 UUID 转换为 base62 编码
+	return string(encoded)
 }

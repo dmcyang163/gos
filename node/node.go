@@ -10,6 +10,7 @@ import (
 	"node/utils"
 
 	"github.com/google/uuid"
+	"github.com/jxskiss/base62"
 	"github.com/patrickmn/go-cache"
 )
 
@@ -338,5 +339,10 @@ func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error 
 
 // generateTraceID generates a unique trace ID.
 func generateTraceID() string {
-	return uuid.New().String()
+	// return uuid.New().String()
+
+	uuidBytes := uuid.New()
+	encoded := base62.Encode(uuidBytes[:])
+	// 将 UUID 转换为 base62 编码
+	return string(encoded)
 }

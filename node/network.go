@@ -50,7 +50,7 @@ func calculateChecksum(data []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// SendFile sends a file in chunks using sendBufferPool.
+// SendFile sends a file in chunks using sendBufferPool asynchronously.
 func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -75,6 +75,9 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 	startTime := time.Now()
 	var totalBytesSent int64
 
+	// 用于同步发送结果的 channel
+	resultChan := make(chan error, 1)
+
 	for {
 		// 读取文件块
 		n, err := nm.readFileChunk(file, buffer[:chunkSize])
@@ -82,8 +85,14 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 			return fmt.Errorf("failed to read file chunk: %w", err)
 		}
 
-		// 发送文件块
-		if err := nm.sendChunkWithRetry(conn, fileInfo, relPath, buffer[:n], chunkID, err == io.EOF); err != nil {
+		// 异步发送文件块
+		nm.executor.SubmitWithPriority(func() {
+			err := nm.sendChunkWithRetry(conn, fileInfo, relPath, buffer[:n], chunkID, err == io.EOF)
+			resultChan <- err
+		}, 10)
+
+		// 等待发送结果
+		if err := <-resultChan; err != nil {
 			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
 

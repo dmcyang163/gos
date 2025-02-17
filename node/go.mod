@@ -227,6 +227,7 @@ require (
 	github.com/iancoleman/orderedmap v0.3.0
 	github.com/ipfs/boxo v0.27.4 // indirect
 	github.com/ipfs/go-cid v0.4.1 // indirect
+	github.com/jxskiss/base62 v1.1.0
 	github.com/klauspost/compress v1.17.11
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect

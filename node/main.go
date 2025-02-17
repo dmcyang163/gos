@@ -69,19 +69,19 @@ func main() {
 			time.Sleep(5 * time.Second)
 
 			// 发送文件
-			// filePath := "D:/young/gos/node/test-data/111111.dll" // 要发送的文件路径
+			// filePath := "D:/gos/nodes/node/test-data/111111.dll" // 要发送的文件路径
 			// if err := node.SendFile("127.0.0.1:1234", filePath, ""); err != nil {
 			// 	logger.Errorf("Failed to send file: %v", err)
 			// } else {
 			// 	logger.Infof("File %s sent successfully to %s", filePath, config.BootstrapNode)
 			// }
 
-			// dirPath := "D:/gos/nodes/node/test-data" // 要发送的目录路径
-			// if err := node.SendDir("127.0.0.1:1234", dirPath); err != nil {
-			// 	logger.Errorf("Failed to send dir: %v", err)
-			// } else {
-			// 	logger.Infof("dir %s sent successfully to %s", dirPath, config.BootstrapNode)
-			// }
+			dirPath := "D:/gos/nodes/node/test-data" // 要发送的目录路径
+			if err := node.SendDir("127.0.0.1:1234", dirPath); err != nil {
+				logger.Errorf("Failed to send dir: %v", err)
+			} else {
+				logger.Infof("dir %s sent successfully to %s", dirPath, config.BootstrapNode)
+			}
 		}
 	}
 
