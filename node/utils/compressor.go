@@ -129,3 +129,21 @@ func NewBufferPool() *sync.Pool {
 		},
 	}
 }
+
+// GetBuffer从指定的缓冲池中获取缓冲区，并确保其至少具有指定的大小
+func GetBuffer(pool *sync.Pool, size int) ([]byte, func()) {
+	bufferPtr := pool.Get().(*[]byte)
+	buffer := *bufferPtr
+
+	if len(buffer) < size {
+		buffer = make([]byte, size)
+	} else {
+		buffer = buffer[:size]
+	}
+
+	releaseBuffer := func() {
+		pool.Put(&buffer)
+	}
+
+	return buffer, releaseBuffer
+}

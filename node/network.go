@@ -61,7 +61,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 	minChunkSize := 512 * 1024      // 最小块大小 512KB
 	maxChunkSize := 4 * 1024 * 1024 // 最大块大小 4MB
 
-	buffer, releaseBuffer := nm.getBuffer(nm.sendBufferPool, maxChunkSize)
+	buffer, releaseBuffer := utils.GetBuffer(nm.sendBufferPool, maxChunkSize)
 	defer releaseBuffer()
 
 	chunkID := 0
@@ -183,8 +183,8 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 
 func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
 	// 从内存池获取长度头缓冲区（复用4字节内存）
-	headerBuf, release := nm.getBuffer(nm.sendBufferPool, 4)
-	defer release()
+	headerBuf, releaseBuffer := utils.GetBuffer(nm.sendBufferPool, 4)
+	defer releaseBuffer()
 
 	// 构造零拷贝写入方案
 	binary.BigEndian.PutUint32(headerBuf[:4], uint32(len(data)))
@@ -210,7 +210,7 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	}
 
 	// 获取缓冲区
-	buffer, releaseBuffer := nm.getBuffer(nm.readBufferPool, int(length))
+	buffer, releaseBuffer := utils.GetBuffer(nm.readBufferPool, int(length))
 	defer releaseBuffer()
 
 	// 读取消息体
@@ -270,22 +270,4 @@ func (nm *NetworkManager) GetConns() []net.Conn {
 		return true
 	})
 	return conns
-}
-
-// getBuffer gets a buffer from the specified buffer pool and ensures it has at least the specified size.
-func (nm *NetworkManager) getBuffer(pool *sync.Pool, size int) ([]byte, func()) {
-	bufferPtr := pool.Get().(*[]byte)
-	buffer := *bufferPtr
-
-	if len(buffer) < size {
-		buffer = make([]byte, size)
-	} else {
-		buffer = buffer[:size]
-	}
-
-	releaseBuffer := func() {
-		pool.Put(&buffer)
-	}
-
-	return buffer, releaseBuffer
 }
