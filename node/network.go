@@ -3,9 +3,7 @@ package main
 
 import (
 	"bufio"
-	"crypto/md5"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -43,11 +41,6 @@ func (nm *NetworkManager) addConn(conn net.Conn) {
 // removeConn removes a connection from the network.
 func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
-}
-
-func calculateChecksum(data []byte) string {
-	hash := md5.Sum(data)
-	return hex.EncodeToString(hash[:])
 }
 
 // SendFile sends a file in chunks using sendBufferPool asynchronously.
@@ -128,7 +121,7 @@ func (nm *NetworkManager) readFileChunk(file *os.File, buffer []byte) (int, erro
 // sendChunkWithRetry 发送文件块并支持重试机制
 func (nm *NetworkManager) sendChunkWithRetry(conn net.Conn, fileInfo os.FileInfo, relPath string, chunk []byte, chunkID int, isLast bool) error {
 	// 计算文件块的校验和
-	checksum := calculateChecksum(chunk)
+	checksum := utils.CalculateChecksum(chunk)
 
 	msg := Message{
 		Type:     MessageTypeFileTransfer,

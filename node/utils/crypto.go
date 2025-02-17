@@ -4,11 +4,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	// "sync"
 )
 
 // AESKeySize 定义了允许的 AES 密钥长度 (定义允许的AES密钥长度)
@@ -110,4 +111,11 @@ func Decrypt(ciphertext string) ([]byte, error) {
 	stream.XORKeyStream(ciphertextBytes, ciphertextBytes)
 
 	return ciphertextBytes, nil // 返回解密后的明文 (返回解密后的明文)
+}
+
+func CalculateChecksum(data []byte) string {
+	// hash := md5.Sum(data)
+	// return hex.EncodeToString(hash[:])
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
 }

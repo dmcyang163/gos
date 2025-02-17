@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net"
+	"node/utils"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,7 +139,7 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 	}
 
 	// 计算接收到的文件块的校验和
-	receivedChecksum := calculateChecksum(msg.Chunk)
+	receivedChecksum := utils.CalculateChecksum(msg.Chunk)
 	if receivedChecksum != msg.Checksum {
 		n.logger.Errorf("Checksum mismatch for chunk %d of file %s", msg.ChunkID, msg.FileName)
 		return
