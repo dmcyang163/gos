@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/panjf2000/ants/v2"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 )
 
 // TaskFunc 是 Goroutine 池中执行的任务函数类型 (任务函数类型)
@@ -34,11 +32,11 @@ type TaskExecutor interface {
 
 // AntsExecutor 是 ants.Pool 的封装，实现 TaskExecutor 接口 (Ants执行器，封装了ants.Pool)
 type AntsExecutor struct {
-	pool      *ants.Pool     // ants 池
-	mu        sync.RWMutex   // 读写锁
-	taskQueue *PriorityQueue // 优先级队列
-	stats     PoolStats      // 统计信息
-	logger    Logger         // 日志记录器
+	pool          *ants.Pool     // ants 池
+	mu            sync.RWMutex   // 读写锁
+	priorityQueue *PriorityQueue // 优先级队列
+	stats         PoolStats      // 统计信息
+	logger        Logger         // 日志记录器
 }
 
 // NewAntsExecutor 创建一个新的 AntsExecutor (创建新的Ants执行器)
@@ -51,10 +49,10 @@ func NewAntsExecutor(size int, logger Logger) (TaskExecutor, error) {
 	heap.Init(taskQueue)          // 初始化优先级队列
 
 	return &AntsExecutor{
-		pool:      pool,
-		taskQueue: taskQueue,
-		stats:     PoolStats{},
-		logger:    logger,
+		pool:          pool,
+		priorityQueue: taskQueue,
+		stats:         PoolStats{},
+		logger:        logger,
 	}, nil
 }
 
@@ -163,7 +161,7 @@ func (e *AntsExecutor) SubmitWithPriority(task TaskFunc, priority int) error {
 	pt.SubmitTime = time.Now()           // 记录提交时间
 
 	e.mu.Lock()
-	heap.Push(e.taskQueue, pt) // 将任务推入优先级队列
+	heap.Push(e.priorityQueue, pt) // 将任务推入优先级队列
 	e.mu.Unlock()
 
 	// 如果池有空闲容量，立即尝试执行任务
@@ -179,10 +177,10 @@ func (e *AntsExecutor) executePriorityTask() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.taskQueue.Len() > 0 { // 检查队列是否为空
-		pt := heap.Pop(e.taskQueue).(*PriorityTask)    // 从优先级队列弹出任务
-		taskPool.Put(pt)                               // 将任务返回到任务池
-		if err := e.pool.Submit(pt.Task); err != nil { // 提交到 ants 池
+	if e.priorityQueue.Len() > 0 { // 检查队列是否为空
+		pt := heap.Pop(e.priorityQueue).(*PriorityTask) // 从优先级队列弹出任务
+		taskPool.Put(pt)                                // 将任务返回到任务池
+		if err := e.pool.Submit(pt.Task); err != nil {  // 提交到 ants 池
 			e.logger.Errorf("Failed to submit priority task: %v", err) // 记录错误日志
 		}
 	}
@@ -264,18 +262,18 @@ func (e *AntsExecutor) Stats() PoolStats {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	stats := PoolStats{ // 构造池状态信息
-		Running:         atomic.LoadInt32(&e.stats.Running),        // 获取正在运行的 Goroutine 数量
-		Waiting:         int(e.pool.Waiting()),                     // 获取等待执行的任务数量
-		TimeoutTasks:    atomic.LoadInt32(&e.stats.TimeoutTasks),   // 获取超时任务数
-		RetryTasks:      atomic.LoadInt32(&e.stats.RetryTasks),     // 获取重试任务数
-		FailedTasks:     atomic.LoadInt32(&e.stats.FailedTasks),    // 获取失败任务数
-		TotalTasks:      atomic.LoadInt32(&e.stats.TotalTasks),     // 获取总任务数
-		CompletedTasks:  atomic.LoadInt32(&e.stats.CompletedTasks), // 获取完成任务数
-		TaskDuration:    e.stats.TaskDuration,                      // 获取最近一次任务执行时间
-		AvgTaskDuration: e.stats.AvgTaskDuration,                   // 获取平均任务执行时间
-		MaxTaskDuration: e.stats.MaxTaskDuration,                   // 获取最大任务执行时间
-		PoolSize:        e.pool.Cap(),                              // 获取池大小
-		QueueSize:       e.taskQueue.Len(),                         // 获取队列大小
+		Running:           atomic.LoadInt32(&e.stats.Running),        // 获取正在运行的 Goroutine 数量
+		Waiting:           int(e.pool.Waiting()),                     // 获取等待执行的任务数量
+		TimeoutTasks:      atomic.LoadInt32(&e.stats.TimeoutTasks),   // 获取超时任务数
+		RetryTasks:        atomic.LoadInt32(&e.stats.RetryTasks),     // 获取重试任务数
+		FailedTasks:       atomic.LoadInt32(&e.stats.FailedTasks),    // 获取失败任务数
+		TotalTasks:        atomic.LoadInt32(&e.stats.TotalTasks),     // 获取总任务数
+		CompletedTasks:    atomic.LoadInt32(&e.stats.CompletedTasks), // 获取完成任务数
+		TaskDuration:      e.stats.TaskDuration,                      // 获取最近一次任务执行时间
+		AvgTaskDuration:   e.stats.AvgTaskDuration,                   // 获取平均任务执行时间
+		MaxTaskDuration:   e.stats.MaxTaskDuration,                   // 获取最大任务执行时间
+		PoolSize:          e.pool.Cap(),                              // 获取池大小
+		PriorityQueueSize: e.priorityQueue.Len(),                     // 获取优先级队列大小 (新增)
 	}
 	return stats
 }
@@ -319,48 +317,58 @@ type PoolStats struct {
 	AvgTaskDuration time.Duration // 任务的平均执行时间
 	MaxTaskDuration time.Duration // 任务的最大执行时间
 
-	QueueSize int // 任务队列的当前大小
-	PoolSize  int // Goroutine 池的当前大小
+	PoolSize          int // Goroutine 池的当前大小
+	PriorityQueueSize int // 优先级队列中的任务数量 (新增)
 }
 
 // FormatPoolStats 自动格式化 PoolStats 信息并返回字符串。
 func (s PoolStats) FormatPoolStats() string {
-	t := reflect.TypeOf(s)
-	v := reflect.ValueOf(s)
 	var sb strings.Builder
-
 	sb.WriteString("池统计信息:\n")
-	// 创建一个用于处理大小写的转换器，使用简体中文规则
-	caser := cases.Title(language.SimplifiedChinese) // 或者使用 language.TraditionalChinese
+
+	// 使用反射遍历结构体字段
+	v := reflect.ValueOf(s)
+	t := v.Type()
+
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		value := v.Field(i)
 
-		// 将字段名转换为更友好的格式（例如，"Running" -> "正在运行的 Goroutine 数量"）
-		fieldName := field.Name
-		fieldName = strings.ReplaceAll(fieldName, "Tasks", " 任务")
-		fieldName = strings.ReplaceAll(fieldName, "Duration", " 持续时间")
-		fieldName = strings.ReplaceAll(fieldName, "Size", " 大小")
-		fieldName = strings.ReplaceAll(fieldName, "Running", "正在运行的 Goroutine")
-		fieldName = caser.String(fieldName)                                 // 首字母大写 (Unicode-aware)
-		fieldName = strings.ReplaceAll(fieldName, "Goroutine", "Goroutine") // 避免重复大写
-		fieldName = strings.ReplaceAll(fieldName, "Avg", "平均")
+		// 格式化字段值
+		formattedValue := formatFieldValue(field, value)
 
-		// 根据字段类型格式化值
-		var formattedValue string
-		switch value.Kind() {
-		case reflect.Int, reflect.Int32, reflect.Int64:
-			formattedValue = strconv.FormatInt(value.Int(), 10)
-		case reflect.String:
-			formattedValue = value.String()
-		default:
-			formattedValue = fmt.Sprintf("%v", value.Interface()) // 默认使用 %v
-		}
-
-		sb.WriteString(fmt.Sprintf("  %s: %s\n", fieldName, formattedValue))
+		// 将字段名和值写入字符串构建器
+		sb.WriteString(fmt.Sprintf("  %s: %s\n", field.Name, formattedValue))
 	}
 
 	return sb.String()
+}
+
+// formatFieldValue 格式化字段值
+func formatFieldValue(field reflect.StructField, value reflect.Value) string {
+	switch {
+	// 判断字段类型是否为 time.Duration
+	case field.Type == reflect.TypeOf(time.Duration(0)):
+		return formatDuration(value.Interface().(time.Duration))
+
+	// 处理其他类型
+	case value.Kind() == reflect.Int, value.Kind() == reflect.Int32, value.Kind() == reflect.Int64:
+		return strconv.FormatInt(value.Int(), 10)
+	case value.Kind() == reflect.String:
+		return value.String()
+	default:
+		return fmt.Sprintf("%v", value.Interface())
+	}
+}
+
+// formatDuration 将 time.Duration 格式化为易读的时间字符串
+func formatDuration(d time.Duration) string {
+	// 如果时间小于 1 秒，显示毫秒
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	// 否则显示小时、分钟、秒
+	return d.String()
 }
 
 // PriorityQueue 及相关实现 (优先级队列及相关实现)

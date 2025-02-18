@@ -296,7 +296,6 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 		return fmt.Errorf("failed to walk directory: %w", err)
 	}
 
-	n.executor.PrintPoolStats()
 	return nil
 }
 

@@ -72,6 +72,8 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 	resultChan := make(chan error, 1)
 
 	for {
+		nm.executor.PrintPoolStats()
+
 		// 读取文件块
 		n, err := nm.readFileChunk(file, buffer[:chunkSize])
 		if err != nil && err != io.EOF {
