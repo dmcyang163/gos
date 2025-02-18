@@ -26,8 +26,8 @@ type NetworkManager struct {
 func NewNetworkManager(logger utils.Logger, executor utils.TaskExecutor) *NetworkManager {
 	return &NetworkManager{
 		Conns:          sync.Map{},
-		sendBufferPool: utils.NewBufferPool(),
-		readBufferPool: utils.NewBufferPool(),
+		sendBufferPool: utils.NewBufferPool(4 * 1024 * 1024),
+		readBufferPool: utils.NewBufferPool(4 * 1024 * 1024),
 		logger:         logger,
 		executor:       executor,
 	}

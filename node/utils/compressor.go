@@ -1,149 +1,164 @@
 package utils
 
 import (
+	"log"
 	"sync"
+	"time"
 
+	"github.com/fatih/color"
 	"github.com/klauspost/compress/snappy"
 	"github.com/klauspost/compress/zstd"
 )
 
 // 默认压缩器
-var defaultCompressor = NewZstdCompressor()
+var (
+	defaultCompressor   Compressor = NewZstdCompressor()
+	defaultCompressorMu sync.Mutex
+)
 
 // Compress 使用默认压缩器压缩数据
 func Compress(data []byte) ([]byte, error) {
+	defaultCompressorMu.Lock()
+	defer defaultCompressorMu.Unlock()
 	return defaultCompressor.Compress(data)
 }
 
 // Decompress 使用默认压缩器解压缩数据
 func Decompress(data []byte) ([]byte, error) {
+	defaultCompressorMu.Lock()
+	defer defaultCompressorMu.Unlock()
 	return defaultCompressor.Decompress(data)
 }
 
-// 定义压缩池和解压池
-var (
-	compressorPool   = NewBufferPool() // 用于压缩的缓冲池
-	decompressorPool = NewBufferPool() // 用于解压缩的缓冲池
-)
-
-// Compressor 是压缩器的接口
+// Compressor 定义压缩器接口
 type Compressor interface {
 	Compress(data []byte) ([]byte, error)
 	Decompress(data []byte) ([]byte, error)
 }
 
-// SnappyCompressor 实现 Snappy 压缩算法
+// SnappyCompressor 使用 Snappy 算法实现压缩
 type SnappyCompressor struct{}
 
+// NewSnappyCompressor 创建 Snappy 压缩器
 func NewSnappyCompressor() *SnappyCompressor {
 	return &SnappyCompressor{}
 }
 
+// Compress 压缩数据
 func (s *SnappyCompressor) Compress(data []byte) ([]byte, error) {
-	buf := compressorPool.Get().(*[]byte)
-	defer compressorPool.Put(buf)
+	start := time.Now()
+	defer func() {
+		log.Printf("Snappy compression completed in %v\n", time.Since(start))
+	}()
 
-	// 动态调整缓冲区大小
-	if cap(*buf) < len(data) {
-		*buf = make([]byte, 0, len(data)*2)
-	} else {
-		*buf = (*buf)[:0]
-	}
-
-	compressed := snappy.Encode(*buf, data)
-	return compressed, nil
+	return snappy.Encode(nil, data), nil
 }
 
+// Decompress 解压缩数据
 func (s *SnappyCompressor) Decompress(data []byte) ([]byte, error) {
-	buf := decompressorPool.Get().(*[]byte)
-	defer decompressorPool.Put(buf)
+	start := time.Now()
+	defer func() {
+		log.Printf("Snappy decompression completed in %v\n", time.Since(start))
+	}()
 
-	// 动态调整缓冲区大小
-	if cap(*buf) < len(data) {
-		*buf = make([]byte, 0, len(data)*4)
-	} else {
-		*buf = (*buf)[:0]
-	}
-
-	decompressed, err := snappy.Decode(*buf, data)
+	decoded, err := snappy.Decode(nil, data)
 	if err != nil {
+		log.Printf("Snappy decompression failed: %v\n", err)
 		return nil, err
 	}
-	return decompressed, nil
+	return decoded, nil
 }
 
-// ZstdCompressor 实现 Zstd 压缩算法
+// ZstdCompressor 使用 Zstd 算法实现压缩
 type ZstdCompressor struct {
 	encoder *zstd.Encoder
 	decoder *zstd.Decoder
+	mu      sync.Mutex
 }
 
+// NewZstdCompressor 创建 Zstd 压缩器
 func NewZstdCompressor() *ZstdCompressor {
-	encoder, _ := zstd.NewWriter(nil)
-	decoder, _ := zstd.NewReader(nil)
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		log.Fatalf("Failed to initialize zstd encoder: %v", err)
+	}
+
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		log.Fatalf("Failed to initialize zstd decoder: %v", err)
+	}
+
 	return &ZstdCompressor{
 		encoder: encoder,
 		decoder: decoder,
 	}
 }
 
+// Compress 压缩数据
 func (z *ZstdCompressor) Compress(data []byte) ([]byte, error) {
-	buf := compressorPool.Get().(*[]byte)
-	defer compressorPool.Put(buf)
+	z.mu.Lock()
+	defer z.mu.Unlock()
 
-	// 动态调整缓冲区大小
-	if cap(*buf) < len(data) {
-		*buf = make([]byte, 0, len(data)*2)
-	} else {
-		*buf = (*buf)[:0]
-	}
+	start := time.Now()
+	defer func() {
+		log.Printf("Zstd compression completed in %v\n", time.Since(start))
+	}()
 
-	compressed := z.encoder.EncodeAll(data, *buf)
-	return compressed, nil
+	return z.encoder.EncodeAll(data, nil), nil
 }
 
+// Decompress 解压缩数据
 func (z *ZstdCompressor) Decompress(data []byte) ([]byte, error) {
-	buf := decompressorPool.Get().(*[]byte)
-	defer decompressorPool.Put(buf)
+	z.mu.Lock()
+	defer z.mu.Unlock()
 
-	// 动态调整缓冲区大小
-	if cap(*buf) < len(data) {
-		*buf = make([]byte, 0, len(data)*4)
-	} else {
-		*buf = (*buf)[:0]
-	}
+	start := time.Now()
+	defer func() {
+		log.Printf("Zstd decompression completed in %v\n", time.Since(start))
+	}()
 
-	decompressed, err := z.decoder.DecodeAll(data, *buf)
+	decoded, err := z.decoder.DecodeAll(data, nil)
 	if err != nil {
+		color.Red("Zstd decompression failed: %v\n", err)
 		return nil, err
 	}
-	return decompressed, nil
+	return decoded, nil
 }
 
-// NewBufferPool 创建一个新的 sync.Pool，用于管理字节切片
-func NewBufferPool() *sync.Pool {
+// NewBufferPool 创建缓冲区池
+func NewBufferPool(size int) *sync.Pool {
 	return &sync.Pool{
 		New: func() interface{} {
-			buf := make([]byte, 0, 1024*1024*4) // 初始容量为 4M
+			buf := make([]byte, 0, size)
 			return &buf
 		},
 	}
 }
 
-// GetBuffer从指定的缓冲池中获取缓冲区，并确保其至少具有指定的大小
+// GetBuffer 从缓冲区池中获取缓冲区
 func GetBuffer(pool *sync.Pool, size int) ([]byte, func()) {
+	const maxBufferSize = 1 << 30 // 1GB
+
+	if size <= 0 || size > maxBufferSize {
+		log.Printf("Invalid buffer size requested: %d\n", size)
+		return nil, func() {}
+	}
+
+	// 从池中获取缓冲区
 	bufferPtr := pool.Get().(*[]byte)
 	buffer := *bufferPtr
 
-	if len(buffer) < size {
-		buffer = make([]byte, size)
-	} else {
+	if cap(buffer) >= size {
 		buffer = buffer[:size]
+		return buffer, func() {
+			*bufferPtr = buffer[:0] // 重置切片
+			pool.Put(bufferPtr)
+		}
 	}
 
-	releaseBuffer := func() {
-		pool.Put(&buffer)
+	// 创建新缓冲区
+	newBuffer := make([]byte, size)
+	return newBuffer, func() {
+		pool.Put(&newBuffer)
 	}
-
-	return buffer, releaseBuffer
 }
