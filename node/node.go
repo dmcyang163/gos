@@ -255,15 +255,42 @@ func (n *Node) BroadcastMessage(message string) error {
 
 // SendDir sends all files in a directory to a peer.
 func (n *Node) SendDir(peerAddr string, dirPath string) error {
+	// 收集所有文件的路径和相对路径
+	files, err := n.collectFiles(dirPath)
+	if err != nil {
+		return fmt.Errorf("failed to collect files: %w", err)
+	}
+
+	// 统一发送文件
+	for _, file := range files {
+		if err := n.SendFile(peerAddr, file.filePath, file.fullRelPath); err != nil {
+			return err
+		}
+		n.logger.Infof("Sent file: %s", file.fullRelPath)
+	}
+
+	return nil
+}
+
+// collectFiles 收集目录下的所有文件信息
+func (n *Node) collectFiles(dirPath string) ([]struct {
+	filePath    string
+	fullRelPath string
+}, error) {
 	// 检查目录是否存在
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		return fmt.Errorf("directory does not exist: %s", dirPath)
+		return nil, fmt.Errorf("directory does not exist: %s", dirPath)
 	}
 
 	// 获取目录名字
-	dirName := filepath.Base(dirPath) // dirName 是 "test-data"
+	dirName := filepath.Base(dirPath)
 
-	// 遍历目录
+	// 收集所有文件的路径和相对路径
+	var files []struct {
+		filePath    string
+		fullRelPath string
+	}
+
 	err := filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -283,20 +310,20 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 		// 将 dirName 作为 relPath 的父目录
 		fullRelPath := filepath.Join(dirName, relPath)
 
-		// 调用 SendFile 发送文件，并传递完整相对路径
-		if err := n.SendFile(peerAddr, filePath, fullRelPath); err != nil {
-			return err
-		}
+		// 收集文件信息
+		files = append(files, struct {
+			filePath    string
+			fullRelPath string
+		}{filePath, fullRelPath})
 
-		n.logger.Infof("Sent file: %s", fullRelPath)
 		return nil
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to walk directory: %w", err)
+		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
 
-	return nil
+	return files, nil
 }
 
 // SendFile sends a file to a peer using an existing connection.
