@@ -145,30 +145,20 @@ func (e *AntsExecutor) Submit(task TaskFunc) error {
 	return e.pool.Submit(wrappedTask)  // 提交到 ants 池
 }
 
-// SubmitWithPriority 提交带优先级的任务 (提交带优先级的任务)
-var taskPool = sync.Pool{ // 任务池，用于复用 PriorityTask 对象
-	New: func() interface{} {
-		return &PriorityTask{}
-	},
-}
-
 func (e *AntsExecutor) SubmitWithPriority(task TaskFunc, priority int) error {
-	wrappedTask := e.wrapTask(task, priority) // 包装任务
-
-	pt := taskPool.Get().(*PriorityTask) // 从任务池获取 PriorityTask 对象
-	pt.Task = wrappedTask                // 设置任务
-	pt.Priority = priority               // 设置优先级
-	pt.SubmitTime = time.Now()           // 记录提交时间
+	wrappedTask := e.wrapTask(task, priority)
 
 	e.mu.Lock()
-	heap.Push(e.priorityQueue, pt) // 将任务推入优先级队列
-	e.mu.Unlock()
+	defer e.mu.Unlock()
 
-	// 如果池有空闲容量，立即尝试执行任务
-	if e.pool.Free() > 0 {
-		e.executePriorityTask()
-	}
+	// 直接创建对象，避免复用
+	heap.Push(e.priorityQueue, &PriorityTask{
+		Task:       wrappedTask,
+		Priority:   priority,
+		SubmitTime: time.Now(),
+	})
 
+	go e.executePriorityTask()
 	return nil
 }
 
@@ -177,12 +167,13 @@ func (e *AntsExecutor) executePriorityTask() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.priorityQueue.Len() > 0 { // 检查队列是否为空
-		pt := heap.Pop(e.priorityQueue).(*PriorityTask) // 从优先级队列弹出任务
-		taskPool.Put(pt)                                // 将任务返回到任务池
-		if err := e.pool.Submit(pt.Task); err != nil {  // 提交到 ants 池
-			e.logger.Errorf("Failed to submit priority task: %v", err) // 记录错误日志
-		}
+	if e.priorityQueue.Len() == 0 {
+		return
+	}
+
+	pt := heap.Pop(e.priorityQueue).(*PriorityTask)
+	if err := e.pool.Submit(pt.Task); err != nil {
+		e.logger.Errorf("提交优先级任务失败: %v", err)
 	}
 }
 
