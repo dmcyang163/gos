@@ -1,4 +1,5 @@
 // network.go
+
 package main
 
 import (
@@ -13,23 +14,26 @@ import (
 	"time"
 )
 
+// 定义消息的最大长度和最小长度
+const (
+	maxMessageSize = 10 * 1024 * 1024 // 10 MB
+	minMessageSize = 4                // 最小长度为4字节（长度字段本身）
+)
+
 // NetworkManager handles network connections.
 type NetworkManager struct {
-	Conns          sync.Map
-	sendBufferPool *sync.Pool
-	readBufferPool *sync.Pool
-	logger         utils.Logger
-	executor       utils.TaskExecutor
+	Conns    sync.Map
+	logger   utils.Logger
+	executor utils.TaskExecutor
+	// mu       sync.Mutex
 }
 
 // NewNetworkManager creates a new NetworkManager instance.
 func NewNetworkManager(logger utils.Logger, executor utils.TaskExecutor) *NetworkManager {
 	return &NetworkManager{
-		Conns:          sync.Map{},
-		sendBufferPool: utils.NewBufferPool(4 * 1024 * 1024),
-		readBufferPool: utils.NewBufferPool(4 * 1024 * 1024),
-		logger:         logger,
-		executor:       executor,
+		Conns:    sync.Map{},
+		logger:   logger,
+		executor: executor,
 	}
 }
 
@@ -43,7 +47,7 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
 }
 
-// SendFile sends a file in chunks using sendBufferPool asynchronously.
+// SendFile sends a file in chunks asynchronously.
 func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -61,8 +65,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 	minChunkSize := 512 * 1024      // 最小块大小 512KB
 	maxChunkSize := 4 * 1024 * 1024 // 最大块大小 4MB
 
-	buffer, releaseBuffer := utils.GetBuffer(nm.sendBufferPool, maxChunkSize)
-	defer releaseBuffer()
+	buffer := make([]byte, maxChunkSize) // 直接分配缓冲区
 
 	chunkID := 0
 	startTime := time.Now()
@@ -72,7 +75,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 	resultChan := make(chan error, 1)
 
 	for {
-		nm.executor.PrintPoolStats()
+		// nm.executor.PrintPoolStats()
 
 		// 读取文件块
 		n, err := nm.readFileChunk(file, buffer[:chunkSize])
@@ -184,15 +187,14 @@ func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 }
 
 func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
-	// 从内存池获取长度头缓冲区（复用4字节内存）
-	headerBuf, releaseBuffer := utils.GetBuffer(nm.sendBufferPool, 4)
-	defer releaseBuffer()
-
-	// 构造零拷贝写入方案
+	// 直接分配长度头缓冲区
+	headerBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(headerBuf[:4], uint32(len(data)))
-	buffers := net.Buffers{headerBuf[:4], data} // 组合两个内存块
 
-	// 单次系统调用发送（使用writev系统调用（Linux）或WSASend（Windows））
+	// 组合两个内存块
+	buffers := net.Buffers{headerBuf[:4], data}
+
+	// 单次系统调用发送
 	_, err := buffers.WriteTo(conn)
 	return err
 }
@@ -211,9 +213,13 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 		return Message{}, err
 	}
 
-	// 获取缓冲区
-	buffer, releaseBuffer := utils.GetBuffer(nm.readBufferPool, int(length))
-	defer releaseBuffer()
+	// 检查消息长度是否合法
+	if length > maxMessageSize {
+		return Message{}, fmt.Errorf("message length %d exceeds max limit %d", length, maxMessageSize)
+	}
+
+	// 直接分配缓冲区
+	buffer := make([]byte, int(length))
 
 	// 读取消息体
 	if _, err := io.ReadFull(reader, buffer); err != nil {
@@ -230,17 +236,17 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 }
 
 // readLength reads the length of the message as a 4-byte big-endian integer.
-// It includes retry mechanism and length validation.
 func (nm *NetworkManager) readLength(reader *bufio.Reader) (uint32, error) {
 	lengthBytes := make([]byte, 4)
-	retries := 3                            // 最大重试次数
-	const maxMessageSize = 10 * 1024 * 1024 // 10MB，最大消息长度
-	const minMessageSize = 4                // 最小消息长度（4字节的长度字段）
+	retries := 3 // 最大重试次数
 
 	for i := 0; i < retries; i++ {
 		// 尝试读取4字节的长度字段
 		_, err := io.ReadFull(reader, lengthBytes)
 		if err != nil {
+			if err == io.EOF {
+				return 0, fmt.Errorf("connection closed while reading length")
+			}
 			time.Sleep(100 * time.Millisecond) // 等待100ms后重试
 			continue
 		}
