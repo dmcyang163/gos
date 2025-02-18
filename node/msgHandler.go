@@ -146,7 +146,7 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 	}
 
 	// 获取或创建文件缓冲区
-	buffer, _ := h.fileBuffers.LoadOrStore(msg.FileName, &fileBuffer{
+	buffer, _ := h.fileBuffers.LoadOrStore(msg.RelPath, &fileBuffer{
 		chunks: make(map[int][]byte),
 		size:   msg.FileSize,
 	})
@@ -160,7 +160,7 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 	// 如果是最后一块，则写入文件
 	if msg.IsLast {
 		go h.writeFile(n, msg.FileName, fb, msg.RelPath)
-		h.fileBuffers.Delete(msg.FileName)
+		h.fileBuffers.Delete(msg.RelPath)
 	}
 }
 

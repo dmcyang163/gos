@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/panjf2000/ants/v2"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // TaskFunc 是 Goroutine 池中执行的任务函数类型 (任务函数类型)
@@ -25,7 +28,8 @@ type TaskExecutor interface {
 	SubmitWithRetry(task TaskFunc, retries int) error             // 提交带重试的任务
 	Resize(size int) error                                        // 调整池大小
 	Stats() PoolStats                                             // 获取池状态
-	Release()                                                     // 释放池
+	PrintPoolStats()
+	Release() // 释放池
 }
 
 // AntsExecutor 是 ants.Pool 的封装，实现 TaskExecutor 接口 (Ants执行器，封装了ants.Pool)
@@ -156,6 +160,7 @@ func (e *AntsExecutor) SubmitWithPriority(task TaskFunc, priority int) error {
 	pt := taskPool.Get().(*PriorityTask) // 从任务池获取 PriorityTask 对象
 	pt.Task = wrappedTask                // 设置任务
 	pt.Priority = priority               // 设置优先级
+	pt.SubmitTime = time.Now()           // 记录提交时间
 
 	e.mu.Lock()
 	heap.Push(e.taskQueue, pt) // 将任务推入优先级队列
@@ -275,6 +280,12 @@ func (e *AntsExecutor) Stats() PoolStats {
 	return stats
 }
 
+// PrintPoolStats 格式化 PoolStats 信息并将其打印到标准输出。
+func (e *AntsExecutor) PrintPoolStats() {
+	stats := e.Stats() // Get the stats from the executor
+	fmt.Println(stats.FormatPoolStats())
+}
+
 // Release 释放池 (释放池)
 func (e *AntsExecutor) Release() {
 	e.mu.Lock()
@@ -312,11 +323,52 @@ type PoolStats struct {
 	PoolSize  int // Goroutine 池的当前大小
 }
 
+// FormatPoolStats 自动格式化 PoolStats 信息并返回字符串。
+func (s PoolStats) FormatPoolStats() string {
+	t := reflect.TypeOf(s)
+	v := reflect.ValueOf(s)
+	var sb strings.Builder
+
+	sb.WriteString("池统计信息:\n")
+	// 创建一个用于处理大小写的转换器，使用简体中文规则
+	caser := cases.Title(language.SimplifiedChinese) // 或者使用 language.TraditionalChinese
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		value := v.Field(i)
+
+		// 将字段名转换为更友好的格式（例如，"Running" -> "正在运行的 Goroutine 数量"）
+		fieldName := field.Name
+		fieldName = strings.ReplaceAll(fieldName, "Tasks", " 任务")
+		fieldName = strings.ReplaceAll(fieldName, "Duration", " 持续时间")
+		fieldName = strings.ReplaceAll(fieldName, "Size", " 大小")
+		fieldName = strings.ReplaceAll(fieldName, "Running", "正在运行的 Goroutine")
+		fieldName = caser.String(fieldName)                                 // 首字母大写 (Unicode-aware)
+		fieldName = strings.ReplaceAll(fieldName, "Goroutine", "Goroutine") // 避免重复大写
+		fieldName = strings.ReplaceAll(fieldName, "Avg", "平均")
+
+		// 根据字段类型格式化值
+		var formattedValue string
+		switch value.Kind() {
+		case reflect.Int, reflect.Int32, reflect.Int64:
+			formattedValue = strconv.FormatInt(value.Int(), 10)
+		case reflect.String:
+			formattedValue = value.String()
+		default:
+			formattedValue = fmt.Sprintf("%v", value.Interface()) // 默认使用 %v
+		}
+
+		sb.WriteString(fmt.Sprintf("  %s: %s\n", fieldName, formattedValue))
+	}
+
+	return sb.String()
+}
+
 // PriorityQueue 及相关实现 (优先级队列及相关实现)
 type PriorityTask struct {
-	Task     func() // 任务函数
-	Priority int    // 优先级
-	index    int    // 在堆中的索引
+	Task       func()    // 任务函数
+	Priority   int       // 优先级
+	index      int       // 在堆中的索引
+	SubmitTime time.Time // 任务提交时间
 }
 
 type PriorityQueue []*PriorityTask
@@ -324,7 +376,10 @@ type PriorityQueue []*PriorityTask
 func (pq PriorityQueue) Len() int { return len(pq) }
 
 func (pq PriorityQueue) Less(i, j int) bool {
-	return pq[i].Priority < pq[j].Priority // 优先级小的排在前面
+	if pq[i].Priority == pq[j].Priority {
+		return pq[i].SubmitTime.Before(pq[j].SubmitTime) // 如果优先级相同，按提交时间排序
+	}
+	return pq[i].Priority < pq[j].Priority // 否则按优先级排序
 }
 
 func (pq PriorityQueue) Swap(i, j int) {
