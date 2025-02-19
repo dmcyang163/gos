@@ -142,7 +142,7 @@ func PackMessage(msg Message) ([]byte, error) {
 
 	packedData, err := pack(data, compressed, encrypted)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("pack error: %w", err)
 	}
 
 	return append([]byte(prefix), packedData...), nil
@@ -205,7 +205,7 @@ func UnpackMessage(data []byte) (Message, error) {
 
 	unpackedData, err := unpack(remainingData, compressed, encrypted)
 	if err != nil {
-		return Message{}, err
+		return Message{}, fmt.Errorf("unpack error: %w", err)
 	}
 
 	var msg Message
