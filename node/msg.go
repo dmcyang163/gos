@@ -36,11 +36,13 @@ const (
 
 // Message 表示节点之间交换的消息
 type Message struct {
-	Type     string `json:"type"`                // 消息类型
-	Data     string `json:"data"`                // 消息内容
-	Sender   string `json:"sender"`              // 发送者名字
-	Address  string `json:"address"`             // 发送者地址
-	ID       string `json:"id"`                  // 消息ID，用于防止重复处理
+	Type    string `json:"type"`    // 消息类型
+	Data    string `json:"data"`    // 消息内容
+	Sender  string `json:"sender"`  // 发送者名字
+	Address string `json:"address"` // 发送者地址
+	ID      string `json:"id"`      // 消息ID，用于防止重复处理
+
+	// 文件传输相关字段
 	FileName string `json:"file_name,omitempty"` // 文件名（可选）
 	FileSize int64  `json:"file_size,omitempty"` // 文件大小（可选）
 	RelPath  string `json:"rel_path,omitempty"`  // 相对路径（可选）
@@ -50,16 +52,18 @@ type Message struct {
 	Checksum string `json:"checksum,omitempty"`  // 校验和（可选）
 }
 
-// 定义需要压缩的消息类型
-var compressedMessageTypes = map[string]bool{
-	MessageTypeChat:         true,
-	MessageTypeFileTransfer: true,
-}
+var (
+	// 定义需要压缩的消息类型
+	compressedMessageTypes = map[string]bool{
+		MessageTypeChat:         true,
+		MessageTypeFileTransfer: true,
+	}
 
-// 定义需要加密的消息类型
-var encryptedMessageTypes = map[string]bool{
-	MessageTypeChat: true,
-}
+	// 定义需要加密的消息类型
+	encryptedMessageTypes = map[string]bool{
+		MessageTypeChat: true,
+	}
+)
 
 // shouldCompressMessage 判断消息是否需要压缩
 func shouldCompressMessage(msgType string) bool {
