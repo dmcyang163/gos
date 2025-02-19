@@ -89,10 +89,12 @@ func decodeMessage(data []byte) (Message, error) {
 
 // pack 处理压缩和加密，返回带前缀的数据
 func pack(data []byte, compressed, encrypted bool) ([]byte, error) {
+	// 从池中获取 bytes.Buffer，避免频繁分配内存
 	buf := bufferPool.Get().(*bytes.Buffer)
-	defer bufferPool.Put(buf)
-	buf.Reset()
+	defer bufferPool.Put(buf) // 使用完毕后放回池中
+	buf.Reset()               // 重置缓冲区
 
+	// 如果需要压缩，先压缩数据
 	if compressed {
 		compressedData, err := utils.Compress(data)
 		if err != nil {
@@ -103,6 +105,7 @@ func pack(data []byte, compressed, encrypted bool) ([]byte, error) {
 		buf.Write(data)
 	}
 
+	// 如果需要加密，对数据进行加密
 	if encrypted {
 		encryptedData, err := utils.Encrypt(buf.Bytes())
 		if err != nil {
@@ -112,10 +115,7 @@ func pack(data []byte, compressed, encrypted bool) ([]byte, error) {
 		buf.Write([]byte(encryptedData))
 	}
 
-	// 返回底层数组的副本，避免外部修改影响池中的缓冲区
-	result := make([]byte, buf.Len())
-	copy(result, buf.Bytes())
-	return result, nil
+	return buf.Bytes(), nil
 }
 
 // PackMessage 打包消息，包括压缩和加密
@@ -145,16 +145,13 @@ func PackMessage(msg Message) ([]byte, error) {
 		return nil, fmt.Errorf("pack error: %w", err)
 	}
 
-	// 使用 bytes.Buffer 拼接前缀和数据
-	buf := bufferPool.Get().(*bytes.Buffer)
-	defer bufferPool.Put(buf)
-	buf.Reset()
-	buf.WriteString(prefix)
-	buf.Write(packedData)
+	// 4. 优化数据拼接逻辑
+	// 原始方式：使用 bytes.Buffer 拼接
+	// 优化方式：预分配内存直接复制
+	result := make([]byte, len(prefix)+len(packedData))
+	copy(result, prefix)
+	copy(result[len(prefix):], packedData)
 
-	// 返回底层数组的副本
-	result := make([]byte, buf.Len())
-	copy(result, buf.Bytes())
 	return result, nil
 }
 
