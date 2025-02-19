@@ -254,6 +254,52 @@ func (n *Node) BroadcastMessage(message string) error {
 	return nil
 }
 
+// SendFile sends a file to a peer using an existing connection.
+func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error {
+	// 检查是否已经连接到该 peer
+	conn, ok := n.net.Conns.Load(peerAddr)
+	if !ok {
+		return fmt.Errorf("no connection to peer: %s", peerAddr)
+	}
+
+	// 加载传输进度
+	progress, err := loadProgress(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to load progress: %w", err)
+	}
+
+	// 如果没有进度条目，初始化一个
+	if len(progress.Entries) == 0 {
+		progress = Progress{
+			Type:    "file",   // 明确设置为 "file"
+			Path:    filePath, // 使用文件的完整路径
+			Entries: []ProgressEntry{{RelPath: relPath, Offset: 0, Completed: false}},
+		}
+	}
+	n.logger.Debugf("正在发送文件: %s, 类型: %s", progress.Path, progress.Type)
+
+	// 获取文件的传输进度
+	entry := &progress.Entries[0]
+
+	// 如果文件已传输完成，跳过
+	if entry.Completed {
+		n.logger.Infof("File already sent: %s", relPath)
+		return nil
+	}
+
+	// 使用 conn.(net.Conn) 将 interface{} 转换为 net.Conn
+	if err := n.SendFileWithProgress(conn.(net.Conn), filePath, relPath, entry); err != nil {
+		return err
+	}
+
+	// 传输完成后删除进度文件
+	if err := deleteProgress(filePath); err != nil {
+		return fmt.Errorf("failed to delete progress file: %w", err)
+	}
+
+	return nil
+}
+
 // SendDir sends all files in a directory to a peer.
 func (n *Node) SendDir(peerAddr string, dirPath string) error {
 	// 检查是否已经连接到该 peer
@@ -311,52 +357,6 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 
 	// 传输完成后删除进度文件
 	if err := deleteProgress(dirPath); err != nil {
-		return fmt.Errorf("failed to delete progress file: %w", err)
-	}
-
-	return nil
-}
-
-// SendFile sends a file to a peer using an existing connection.
-func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error {
-	// 检查是否已经连接到该 peer
-	conn, ok := n.net.Conns.Load(peerAddr)
-	if !ok {
-		return fmt.Errorf("no connection to peer: %s", peerAddr)
-	}
-
-	// 加载传输进度
-	progress, err := loadProgress(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to load progress: %w", err)
-	}
-
-	// 如果没有进度条目，初始化一个
-	if len(progress.Entries) == 0 {
-		progress = Progress{
-			Type:    "file",   // 明确设置为 "file"
-			Path:    filePath, // 使用文件的完整路径
-			Entries: []ProgressEntry{{RelPath: relPath, Offset: 0, Completed: false}},
-		}
-	}
-	n.logger.Debugf("正在发送文件: %s, 类型: %s", progress.Path, progress.Type)
-
-	// 获取文件的传输进度
-	entry := &progress.Entries[0]
-
-	// 如果文件已传输完成，跳过
-	if entry.Completed {
-		n.logger.Infof("File already sent: %s", relPath)
-		return nil
-	}
-
-	// 使用 conn.(net.Conn) 将 interface{} 转换为 net.Conn
-	if err := n.SendFileWithProgress(conn.(net.Conn), filePath, relPath, entry); err != nil {
-		return err
-	}
-
-	// 传输完成后删除进度文件
-	if err := deleteProgress(filePath); err != nil {
 		return fmt.Errorf("failed to delete progress file: %w", err)
 	}
 
