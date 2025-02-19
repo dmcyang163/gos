@@ -83,20 +83,16 @@ func encodeMessage(msg Message) ([]byte, error) {
 // decodeMessage 将 JSON 字节反序列化为消息
 func decodeMessage(data []byte) (Message, error) {
 	var msg Message
-	if err := jniter.Unmarshal(data, &msg); err != nil {
-		return Message{}, fmt.Errorf("deserialization error: %w", err)
-	}
-	return msg, nil
+	err := jniter.Unmarshal(data, &msg)
+	return msg, err
 }
 
 // pack 处理压缩和加密，返回带前缀的数据
 func pack(data []byte, compressed, encrypted bool) ([]byte, error) {
-	// 从池中获取 bytes.Buffer，避免频繁分配内存
 	buf := bufferPool.Get().(*bytes.Buffer)
-	defer bufferPool.Put(buf) // 使用完毕后放回池中
-	buf.Reset()               // 重置缓冲区
+	defer bufferPool.Put(buf)
+	buf.Reset()
 
-	// 如果需要压缩，先压缩数据
 	if compressed {
 		compressedData, err := utils.Compress(data)
 		if err != nil {
@@ -107,7 +103,6 @@ func pack(data []byte, compressed, encrypted bool) ([]byte, error) {
 		buf.Write(data)
 	}
 
-	// 如果需要加密，对数据进行加密
 	if encrypted {
 		encryptedData, err := utils.Encrypt(buf.Bytes())
 		if err != nil {
@@ -117,7 +112,10 @@ func pack(data []byte, compressed, encrypted bool) ([]byte, error) {
 		buf.Write([]byte(encryptedData))
 	}
 
-	return buf.Bytes(), nil
+	// 返回底层数组的副本，避免外部修改影响池中的缓冲区
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	return result, nil
 }
 
 // PackMessage 打包消息，包括压缩和加密
@@ -133,13 +131,13 @@ func PackMessage(msg Message) ([]byte, error) {
 	var prefix string
 	switch {
 	case compressed && encrypted:
-		prefix = "CE|" // 压缩加密
+		prefix = "CE|"
 	case compressed:
-		prefix = "C|" // 压缩未加密
+		prefix = "C|"
 	case encrypted:
-		prefix = "E|" // 未压缩加密
+		prefix = "E|"
 	default:
-		prefix = "N|" // 未压缩未加密
+		prefix = "N|"
 	}
 
 	packedData, err := pack(data, compressed, encrypted)
@@ -147,7 +145,17 @@ func PackMessage(msg Message) ([]byte, error) {
 		return nil, fmt.Errorf("pack error: %w", err)
 	}
 
-	return append([]byte(prefix), packedData...), nil
+	// 使用 bytes.Buffer 拼接前缀和数据
+	buf := bufferPool.Get().(*bytes.Buffer)
+	defer bufferPool.Put(buf)
+	buf.Reset()
+	buf.WriteString(prefix)
+	buf.Write(packedData)
+
+	// 返回底层数组的副本
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	return result, nil
 }
 
 // parseMessagePrefix 解析消息前缀
