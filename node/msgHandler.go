@@ -166,9 +166,6 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 
 // writeFile 将文件块写入磁盘
 func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer, relPath string) {
-	// 确保 received_files 目录存在
-	os.MkdirAll("received_files", os.ModePerm)
-
 	// 构建文件路径
 	var filePath string
 	if relPath != "" && !strings.Contains(relPath, "..") { // 检查 relPath 是否合法
@@ -177,13 +174,21 @@ func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer
 		filePath = filepath.Join("received_files", fileName)
 	}
 
-	// 创建文件的父目录（如果不存在）
+	// 确保 received_files 目录存在
 	dir := filepath.Dir(filePath) // 获取文件的父目录
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		n.logger.WithError(err).Error("Failed to create directory")
 		return
 	}
 
+	writeFileChunks(n, filePath, fb)
+
+	n.logger.WithFields(logrus.Fields{
+		"file": filePath,
+	}).Info("File transfer completed")
+}
+
+func writeFileChunks(n *Node, filePath string, fb *fileBuffer) {
 	// 创建文件
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -202,10 +207,6 @@ func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer
 			}
 		}
 	}
-
-	n.logger.WithFields(logrus.Fields{
-		"file": filePath,
-	}).Info("File transfer completed")
 }
 
 // fileBuffer 用于存储文件块的缓冲区

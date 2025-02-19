@@ -5,7 +5,6 @@ import (
 	"fmt"
 	_ "net/http/pprof"
 	"os"
-	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/pflag"
@@ -65,8 +64,6 @@ func main() {
 		if err := node.connectToPeer(config.BootstrapNode); err != nil {
 			logger.Errorf("Failed to connect to bootstrap node: %v", err)
 		} else {
-			// 连接成功后，等待 5 秒再发送文件
-			time.Sleep(5 * time.Second)
 
 			// 发送文件
 			// filePath := "D:/gos/nodes/node/test-data/123/111111.dll" // 要发送的文件路径

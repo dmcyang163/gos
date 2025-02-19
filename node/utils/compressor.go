@@ -1,11 +1,9 @@
 package utils
 
 import (
-	"log"
+	"fmt"
 	"sync"
-	"time"
 
-	"github.com/fatih/color"
 	"github.com/klauspost/compress/snappy"
 	"github.com/klauspost/compress/zstd"
 )
@@ -46,24 +44,13 @@ func NewSnappyCompressor() *SnappyCompressor {
 
 // Compress 压缩数据
 func (s *SnappyCompressor) Compress(data []byte) ([]byte, error) {
-	start := time.Now()
-	defer func() {
-		log.Printf("Snappy compression completed in %v\n", time.Since(start))
-	}()
-
 	return snappy.Encode(nil, data), nil
 }
 
 // Decompress 解压缩数据
 func (s *SnappyCompressor) Decompress(data []byte) ([]byte, error) {
-	start := time.Now()
-	defer func() {
-		log.Printf("Snappy decompression completed in %v\n", time.Since(start))
-	}()
-
 	decoded, err := snappy.Decode(nil, data)
 	if err != nil {
-		log.Printf("Snappy decompression failed: %v\n", err)
 		return nil, err
 	}
 	return decoded, nil
@@ -80,12 +67,12 @@ type ZstdCompressor struct {
 func NewZstdCompressor() *ZstdCompressor {
 	encoder, err := zstd.NewWriter(nil)
 	if err != nil {
-		log.Fatalf("Failed to initialize zstd encoder: %v", err)
+		panic(fmt.Sprintf("Failed to initialize zstd encoder: %v", err))
 	}
 
 	decoder, err := zstd.NewReader(nil)
 	if err != nil {
-		log.Fatalf("Failed to initialize zstd decoder: %v", err)
+		panic(fmt.Sprintf("Failed to initialize zstd decoder: %v", err))
 	}
 
 	return &ZstdCompressor{
@@ -98,12 +85,6 @@ func NewZstdCompressor() *ZstdCompressor {
 func (z *ZstdCompressor) Compress(data []byte) ([]byte, error) {
 	z.mu.Lock()
 	defer z.mu.Unlock()
-
-	start := time.Now()
-	defer func() {
-		log.Printf("Zstd compression completed in %v\n", time.Since(start))
-	}()
-
 	return z.encoder.EncodeAll(data, nil), nil
 }
 
@@ -111,15 +92,8 @@ func (z *ZstdCompressor) Compress(data []byte) ([]byte, error) {
 func (z *ZstdCompressor) Decompress(data []byte) ([]byte, error) {
 	z.mu.Lock()
 	defer z.mu.Unlock()
-
-	start := time.Now()
-	defer func() {
-		log.Printf("Zstd decompression completed in %v\n", time.Since(start))
-	}()
-
 	decoded, err := z.decoder.DecodeAll(data, nil)
 	if err != nil {
-		color.Red("Zstd decompression failed: %v\n", err)
 		return nil, err
 	}
 	return decoded, nil
@@ -140,7 +114,6 @@ func GetBuffer(pool *sync.Pool, size int) ([]byte, func()) {
 	const maxBufferSize = 1 << 30 // 1GB
 
 	if size <= 0 || size > maxBufferSize {
-		log.Printf("Invalid buffer size requested: %d\n", size)
 		return nil, func() {}
 	}
 
