@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -201,10 +200,10 @@ func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
 
 // ReadMessage reads a message from the connection.
 func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
-	reader := bufio.NewReader(conn)
+	// reader := bufio.NewReader(conn)
 
 	// 读取消息长度
-	length, err := nm.readLength(reader)
+	length, err := nm.readLength(conn)
 	if err != nil {
 		nm.logger.WithFields(map[string]interface{}{
 			"remote_addr": conn.RemoteAddr().String(),
@@ -221,8 +220,9 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	// 直接分配缓冲区
 	buffer := make([]byte, int(length))
 
-	// 读取消息体
-	if _, err := io.ReadFull(reader, buffer); err != nil {
+	// 使用 io.ReadFull 读取消息体
+	_, err = io.ReadFull(conn, buffer)
+	if err != nil {
 		return Message{}, fmt.Errorf("error reading message body: %w", err)
 	}
 
@@ -236,13 +236,13 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 }
 
 // readLength reads the length of the message as a 4-byte big-endian integer.
-func (nm *NetworkManager) readLength(reader *bufio.Reader) (uint32, error) {
+func (nm *NetworkManager) readLength(conn net.Conn) (uint32, error) {
 	lengthBytes := make([]byte, 4)
 	retries := 3 // 最大重试次数
 
 	for i := 0; i < retries; i++ {
 		// 尝试读取4字节的长度字段
-		_, err := io.ReadFull(reader, lengthBytes)
+		_, err := io.ReadFull(conn, lengthBytes)
 		if err != nil {
 			if err == io.EOF {
 				return 0, fmt.Errorf("connection closed while reading length")

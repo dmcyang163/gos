@@ -336,24 +336,14 @@ func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error 
 
 	// 将文件发送任务提交到 executor 中执行
 	err := n.executor.Submit(func() {
-		n.logger.WithFields(map[string]interface{}{
-			"peer_addr": peerAddr,
-			"file_path": filePath,
-			"rel_path":  relPath,
-		}).Info("Starting to send file")
-
 		// 使用现有的连接发送文件
 		if err := n.net.SendFile(conn.(net.Conn), filePath, relPath); err != nil {
 			n.logger.WithFields(map[string]interface{}{
 				"peer_addr": peerAddr,
 				"file_path": filePath,
-				"error":     err,
+				"rel_path":  relPath,
+				"error":     err.Error(),
 			}).Error("Failed to send file")
-		} else {
-			n.logger.WithFields(map[string]interface{}{
-				"peer_addr": peerAddr,
-				"file_path": filePath,
-			}).Info("File sent successfully")
 		}
 	})
 
