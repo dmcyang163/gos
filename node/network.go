@@ -1,5 +1,3 @@
-// network.go
-
 package main
 
 import (
@@ -24,7 +22,6 @@ type NetworkManager struct {
 	Conns    sync.Map
 	logger   utils.Logger
 	executor utils.TaskExecutor
-	// mu       sync.Mutex
 }
 
 // NewNetworkManager creates a new NetworkManager instance.
@@ -46,21 +43,8 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
 }
 
-var fileOffsets sync.Map // 用于存储文件的传输进度
-
-func getFileOffset(relPath string) int64 {
-	if offset, ok := fileOffsets.Load(relPath); ok {
-		return offset.(int64)
-	}
-	return 0
-}
-
-func updateFileOffset(relPath string, offset int64) {
-	fileOffsets.Store(relPath, offset)
-}
-
 // SendFile sends a file in chunks asynchronously.
-func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string) error {
+func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string, offset int64) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -70,6 +54,11 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	// 跳过已传输的部分
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to seek file: %w", err)
 	}
 
 	// 初始块大小
@@ -85,12 +74,6 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 
 	// 用于同步发送结果的 channel
 	resultChan := make(chan error, 1)
-
-	// 读取文件的当前传输进度
-	offset := getFileOffset(relPath) // 需要实现 getFileOffset 函数
-
-	// 跳过已传输的部分
-	file.Seek(offset, io.SeekStart)
 
 	for {
 		// 读取文件块
@@ -113,9 +96,6 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 		totalBytesSent += int64(n)
 		chunkID++
 
-		// 更新传输进度
-		updateFileOffset(relPath, totalBytesSent) // 需要实现 updateFileOffset 函数
-
 		// 动态调整块大小
 		chunkSize = nm.calculateChunkSize(chunkSize, minChunkSize, maxChunkSize, startTime, totalBytesSent)
 
@@ -135,11 +115,11 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 
 // readFileChunk 读取文件的指定块
 func (nm *NetworkManager) readFileChunk(file *os.File, buffer []byte) (int, error) {
-	n, err := file.Read(buffer)
+	bytesRead, err := file.Read(buffer)
 	if err != nil && err != io.EOF {
 		return 0, fmt.Errorf("failed to read file: %w", err)
 	}
-	return n, err // 返回读取的字节数和可能的错误
+	return bytesRead, err // 返回读取的字节数和可能的错误
 }
 
 // sendChunkWithRetry 发送文件块并支持重试机制
@@ -220,8 +200,6 @@ func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
 
 // ReadMessage reads a message from the connection.
 func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
-	// reader := bufio.NewReader(conn)
-
 	// 读取消息长度
 	length, err := nm.readLength(conn)
 	if err != nil {

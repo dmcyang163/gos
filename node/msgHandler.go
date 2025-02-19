@@ -1,4 +1,3 @@
-// msgHandler.go
 package main
 
 import (
@@ -149,7 +148,6 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 	buffer, _ := h.fileBuffers.LoadOrStore(msg.RelPath, &fileBuffer{
 		chunks: make(map[int][]byte),
 		size:   msg.FileSize,
-		offset: getFileOffset(msg.RelPath), // 获取当前传输进度
 	})
 	fb := buffer.(*fileBuffer)
 
@@ -182,19 +180,10 @@ func (h *FileTransferHandler) writeFile(n *Node, fileName string, fb *fileBuffer
 		return
 	}
 
-	// 调用 writeFileChunks 函数写入文件块
-	writeFileChunks(n, filePath, fb)
-
-	n.logger.WithFields(logrus.Fields{
-		"file": filePath,
-	}).Info("File transfer completed")
-}
-
-func writeFileChunks(n *Node, filePath string, fb *fileBuffer) {
-	// 创建文件
-	file, err := os.Create(filePath)
+	// 打开文件并定位到上次接收的位置
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		n.logger.WithError(err).Error("Failed to create file")
+		n.logger.WithError(err).Error("Failed to open file")
 		return
 	}
 	defer file.Close()
@@ -209,6 +198,10 @@ func writeFileChunks(n *Node, filePath string, fb *fileBuffer) {
 			}
 		}
 	}
+
+	n.logger.WithFields(logrus.Fields{
+		"file": filePath,
+	}).Info("File transfer completed")
 }
 
 // fileBuffer 用于存储文件块的缓冲区
@@ -216,7 +209,6 @@ type fileBuffer struct {
 	mu     sync.Mutex
 	chunks map[int][]byte // 文件块
 	size   int64          // 文件总大小
-	offset int64          // 已传输的字节数
 }
 
 // NodeStatusHandler handles "node_status" messages.
