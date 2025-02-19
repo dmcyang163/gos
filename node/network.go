@@ -46,6 +46,19 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
 }
 
+var fileOffsets sync.Map // 用于存储文件的传输进度
+
+func getFileOffset(relPath string) int64 {
+	if offset, ok := fileOffsets.Load(relPath); ok {
+		return offset.(int64)
+	}
+	return 0
+}
+
+func updateFileOffset(relPath string, offset int64) {
+	fileOffsets.Store(relPath, offset)
+}
+
 // SendFile sends a file in chunks asynchronously.
 func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string) error {
 	file, err := os.Open(filePath)
@@ -73,9 +86,13 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 	// 用于同步发送结果的 channel
 	resultChan := make(chan error, 1)
 
-	for {
-		// nm.executor.PrintPoolStats()
+	// 读取文件的当前传输进度
+	offset := getFileOffset(relPath) // 需要实现 getFileOffset 函数
 
+	// 跳过已传输的部分
+	file.Seek(offset, io.SeekStart)
+
+	for {
 		// 读取文件块
 		n, err := nm.readFileChunk(file, buffer[:chunkSize])
 		if err != nil && err != io.EOF {
@@ -95,6 +112,9 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 
 		totalBytesSent += int64(n)
 		chunkID++
+
+		// 更新传输进度
+		updateFileOffset(relPath, totalBytesSent) // 需要实现 updateFileOffset 函数
 
 		// 动态调整块大小
 		chunkSize = nm.calculateChunkSize(chunkSize, minChunkSize, maxChunkSize, startTime, totalBytesSent)
