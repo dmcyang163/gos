@@ -17,7 +17,8 @@ var (
 		},
 	}
 	// 使用 json-iterator/go 替代标准库的 encoding/json，提高性能
-	jniter = jsoniter.ConfigCompatibleWithStandardLibrary
+	// jniter = jsoniter.ConfigCompatibleWithStandardLibrary
+	jniter = jsoniter.ConfigFastest
 )
 
 // MessageType 定义消息类型
@@ -82,35 +83,6 @@ func decodeMessage(data []byte) (Message, error) {
 		return Message{}, fmt.Errorf("deserialization error: %w", err)
 	}
 	return msg, nil
-}
-
-// CompressMessage 压缩消息
-func CompressMessage(msg Message) ([]byte, error) {
-	data, err := encodeMessage(msg)
-	if err != nil {
-		return nil, err
-	}
-
-	if !shouldCompressMessage(msg.Type) {
-		return data, nil
-	}
-
-	compressed, err := utils.Compress(data)
-	if err != nil {
-		return nil, fmt.Errorf("compression error: %w", err)
-	}
-
-	return compressed, nil
-}
-
-// DecompressMessage 解压缩消息
-func DecompressMessage(data []byte) (Message, error) {
-	decoded, err := utils.Decompress(data)
-	if err == nil {
-		return decodeMessage(decoded)
-	}
-
-	return decodeMessage(data)
 }
 
 // pack 处理压缩和加密，返回带前缀的数据
