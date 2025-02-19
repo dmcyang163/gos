@@ -317,60 +317,6 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 	return nil
 }
 
-// collectFiles 收集目录下的所有文件信息
-func (n *Node) collectFiles(dirPath string) ([]struct {
-	filePath    string
-	fullRelPath string
-}, error) {
-	// 检查目录是否存在
-	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("directory does not exist: %s", dirPath)
-	}
-
-	// 获取目录名字
-	dirName := filepath.Base(dirPath)
-
-	// 收集所有文件的路径和相对路径
-	var files []struct {
-		filePath    string
-		fullRelPath string
-	}
-
-	err := filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// 忽略目录，只发送文件
-		if info.IsDir() {
-			return nil
-		}
-
-		// 计算相对路径
-		relPath, err := filepath.Rel(dirPath, filePath)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path: %w", err)
-		}
-
-		// 将 dirName 作为 relPath 的父目录
-		fullRelPath := filepath.Join(dirName, relPath)
-
-		// 收集文件信息
-		files = append(files, struct {
-			filePath    string
-			fullRelPath string
-		}{filePath, fullRelPath})
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to walk directory: %w", err)
-	}
-
-	return files, nil
-}
-
 // SendFile sends a file to a peer using an existing connection.
 func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error {
 	// 检查是否已经连接到该 peer
@@ -492,6 +438,60 @@ func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath stri
 	}
 
 	return nil
+}
+
+// collectFiles 收集目录下的所有文件信息
+func (n *Node) collectFiles(dirPath string) ([]struct {
+	filePath    string
+	fullRelPath string
+}, error) {
+	// 检查目录是否存在
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("directory does not exist: %s", dirPath)
+	}
+
+	// 获取目录名字
+	dirName := filepath.Base(dirPath)
+
+	// 收集所有文件的路径和相对路径
+	var files []struct {
+		filePath    string
+		fullRelPath string
+	}
+
+	err := filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// 忽略目录，只发送文件
+		if info.IsDir() {
+			return nil
+		}
+
+		// 计算相对路径
+		relPath, err := filepath.Rel(dirPath, filePath)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path: %w", err)
+		}
+
+		// 将 dirName 作为 relPath 的父目录
+		fullRelPath := filepath.Join(dirName, relPath)
+
+		// 收集文件信息
+		files = append(files, struct {
+			filePath    string
+			fullRelPath string
+		}{filePath, fullRelPath})
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk directory: %w", err)
+	}
+
+	return files, nil
 }
 
 // generateTraceID generates a unique trace ID.

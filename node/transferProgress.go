@@ -84,26 +84,28 @@ func saveProgress(progress Progress) error {
 }
 
 // loadProgress 从文件中加载传输进度
+// loadProgress 自动推断类型
 func loadProgress(path string) (Progress, error) {
-	progressMutex.Lock()
-	defer progressMutex.Unlock()
-
+	// 尝试读取现有进度文件
 	filePath := getProgressFilePath(path)
 	file, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Progress{Path: path}, nil // 文件不存在，返回空的进度
+			// 新任务：根据路径类型初始化
+			if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+				return Progress{Type: "dir", Path: path}, nil
+			}
+			return Progress{Type: "file", Path: path}, nil
 		}
-		return Progress{}, fmt.Errorf("failed to open progress file: %w", err)
+		return Progress{}, err
 	}
 	defer file.Close()
 
+	// 解码现有进度
 	var progress Progress
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&progress); err != nil {
-		return Progress{}, fmt.Errorf("failed to decode progress entry: %w", err)
+	if err := json.NewDecoder(file).Decode(&progress); err != nil {
+		return Progress{}, err
 	}
-
 	return progress, nil
 }
 
