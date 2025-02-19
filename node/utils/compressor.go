@@ -10,22 +10,22 @@ import (
 
 // 默认压缩器
 var (
-	defaultCompressor   Compressor = NewZstdCompressor()
-	defaultCompressorMu sync.Mutex
+	compressor   Compressor = NewZstdCompressor()
+	compressorMu sync.Mutex
 )
 
 // Compress 使用默认压缩器压缩数据
 func Compress(data []byte) ([]byte, error) {
-	defaultCompressorMu.Lock()
-	defer defaultCompressorMu.Unlock()
-	return defaultCompressor.Compress(data)
+	compressorMu.Lock()
+	defer compressorMu.Unlock()
+	return compressor.Compress(data)
 }
 
 // Decompress 使用默认压缩器解压缩数据
 func Decompress(data []byte) ([]byte, error) {
-	defaultCompressorMu.Lock()
-	defer defaultCompressorMu.Unlock()
-	return defaultCompressor.Decompress(data)
+	compressorMu.Lock()
+	defer compressorMu.Unlock()
+	return compressor.Decompress(data)
 }
 
 // Compressor 定义压缩器接口
