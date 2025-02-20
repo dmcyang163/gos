@@ -342,14 +342,9 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 				return err
 			}
 			n.logger.Infof("Sent file: %s", file.fullRelPath)
-
-			// 更新传输进度并保存
-			if err := saveProgress(progress); err != nil {
-				return fmt.Errorf("failed to save progress: %w", err)
-			}
 		}
 	}
-	time.Sleep(10 * time.Second)
+
 	// 传输完成后删除进度文件
 	if err := deleteProgress(dirPath); err != nil {
 		return fmt.Errorf("failed to delete progress file: %w", err)
