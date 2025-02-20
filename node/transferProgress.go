@@ -26,8 +26,16 @@ type Progress struct {
 	Entries []ProgressEntry `json:"entries"` // 传输进度条目
 }
 
-var progressDir = "progress" // 进度文件存储目录
-var progressMutex sync.Mutex // 用于保护进度文件的并发访问
+const (
+	progressDir       = "progress" // 进度文件存储目录
+	maxFileNameLength = 255        // 最大文件名长度
+)
+
+var (
+	progressMutex sync.Mutex                            // 用于保护进度文件的并发访问
+	illegalChars  = "/\\:*?\"<>|"                       // 定义非法字符
+	re            = regexp.MustCompile(`[_-]([^\s_-])`) // 匹配_或-后面跟随的单词
+)
 
 // ensureProgressDir 确保进度文件目录存在
 func ensureProgressDir() error {
@@ -37,18 +45,16 @@ func ensureProgressDir() error {
 	return nil
 }
 
-// 删除字符串中的非法字符
+// sanitizeFileName 删除字符串中的非法字符
 func sanitizeFileName(part string) string {
-	illegalChars := "/\\:*?\"<>|"
 	for _, char := range illegalChars {
 		part = strings.ReplaceAll(part, string(char), "")
 	}
 	return part
 }
 
-// 处理part，去掉_和-，并将它们后面的单词首字母大写
+// processPart 处理part，去掉_和-，并将它们后面的单词首字母大写
 func processPart(part string) string {
-	re := regexp.MustCompile(`[_-]([^\s_-])`)
 	return re.ReplaceAllStringFunc(part, func(match string) string {
 		if len(match) > 1 {
 			return strings.ToUpper(match[1:2]) + match[2:]
@@ -67,7 +73,10 @@ func getProgressFilePath(path string) string {
 	// 清理路径的每个部分
 	parts := strings.Split(cleanedPath, string(filepath.Separator))
 	for i, part := range parts {
-		parts[i] = processPart(sanitizeFileName(part))
+		// 首先删除非法字符
+		part = sanitizeFileName(part)
+		// 然后处理连接符和大小写
+		parts[i] = processPart(part)
 	}
 
 	// 构建基础文件名
@@ -77,7 +86,6 @@ func getProgressFilePath(path string) string {
 	fileName := fmt.Sprintf("tpg%s_%s.json", hashStr, baseFileName)
 
 	// 确保文件名长度不超过 255 个字符
-	const maxFileNameLength = 255
 	if len(fileName) > maxFileNameLength {
 		// 直接在 .json 前截断
 		fileName = fileName[:maxFileNameLength-len(".json")] + ".json"
@@ -87,61 +95,71 @@ func getProgressFilePath(path string) string {
 	return filepath.Join(progressDir, fileName)
 }
 
-// saveProgress 保存传输进度到文件
-func saveProgress(progress Progress) error {
+// withMutex 使用互斥锁执行操作
+func withMutex(fn func() error) error {
 	progressMutex.Lock()
 	defer progressMutex.Unlock()
+	return fn()
+}
 
-	if err := ensureProgressDir(); err != nil {
-		return fmt.Errorf("failed to create progress directory: %w", err)
-	}
+// saveProgress 保存传输进度到文件
+func saveProgress(progress Progress) error {
+	return withMutex(func() error {
+		if err := ensureProgressDir(); err != nil {
+			return fmt.Errorf("failed to create progress directory: %w", err)
+		}
 
-	filePath := getProgressFilePath(progress.Path)
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to create progress file: %w", err)
-	}
-	defer file.Close()
+		filePath := getProgressFilePath(progress.Path)
+		file, err := os.Create(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to create progress file: %w", err)
+		}
+		defer file.Close()
 
-	if err := json.NewEncoder(file).Encode(progress); err != nil {
-		return fmt.Errorf("failed to encode progress entry: %w", err)
-	}
+		if err := json.NewEncoder(file).Encode(progress); err != nil {
+			return fmt.Errorf("failed to encode progress entry: %w", err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // loadProgress 从文件中加载传输进度
-// loadProgress 自动推断类型
 func loadProgress(path string) (Progress, error) {
-	filePath := getProgressFilePath(path)
-	file, err := os.Open(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// 新任务：根据路径类型初始化
-			if fi, err := os.Stat(path); err == nil && fi.IsDir() {
-				return Progress{Type: "dir", Path: path}, nil
-			}
-			return Progress{Type: "file", Path: path}, nil
-		}
-		return Progress{}, err
-	}
-	defer file.Close()
-
 	var progress Progress
-	if err := json.NewDecoder(file).Decode(&progress); err != nil {
-		return Progress{}, err
-	}
-	return progress, nil
+	err := withMutex(func() error {
+		filePath := getProgressFilePath(path)
+		file, err := os.Open(filePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// 新任务：根据路径类型初始化
+				if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+					progress = Progress{Type: "dir", Path: path}
+				} else {
+					progress = Progress{Type: "file", Path: path}
+				}
+				return nil
+			}
+			return err
+		}
+		defer file.Close()
+
+		if err := json.NewDecoder(file).Decode(&progress); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	return progress, err
 }
 
 // deleteProgress 删除进度文件
 func deleteProgress(path string) error {
-	progressMutex.Lock()
-	defer progressMutex.Unlock()
-
-	filePath := getProgressFilePath(path)
-	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to delete progress file: %w", err)
-	}
-	return nil
+	return withMutex(func() error {
+		filePath := getProgressFilePath(path)
+		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete progress file: %w", err)
+		}
+		return nil
+	})
 }
