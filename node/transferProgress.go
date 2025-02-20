@@ -33,24 +33,18 @@ const (
 
 var (
 	progressMutex sync.Mutex                            // 用于保护进度文件的并发访问
-	illegalChars  = "/\\:*?\"<>|"                       // 定义非法字符
+	illegalChars  = regexp.MustCompile(`[/\\:*?"<>|]`)  // 定义非法字符的正则表达式
 	re            = regexp.MustCompile(`[_-]([^\s_-])`) // 匹配_或-后面跟随的单词
 )
 
 // ensureProgressDir 确保进度文件目录存在
 func ensureProgressDir() error {
-	if _, err := os.Stat(progressDir); os.IsNotExist(err) {
-		return os.MkdirAll(progressDir, os.ModePerm)
-	}
-	return nil
+	return os.MkdirAll(progressDir, os.ModePerm)
 }
 
 // sanitizeFileName 删除字符串中的非法字符
 func sanitizeFileName(part string) string {
-	for _, char := range illegalChars {
-		part = strings.ReplaceAll(part, string(char), "")
-	}
-	return part
+	return illegalChars.ReplaceAllString(part, "")
 }
 
 // processPart 处理part，去掉_和-，并将它们后面的单词首字母大写
@@ -73,9 +67,7 @@ func getProgressFilePath(path string) string {
 	// 清理路径的每个部分
 	parts := strings.Split(cleanedPath, string(filepath.Separator))
 	for i, part := range parts {
-		// 首先删除非法字符
 		part = sanitizeFileName(part)
-		// 然后处理连接符和大小写
 		parts[i] = processPart(part)
 	}
 
@@ -112,7 +104,7 @@ func saveProgress(progress Progress) error {
 		filePath := getProgressFilePath(progress.Path)
 		file, err := os.Create(filePath)
 		if err != nil {
-			return fmt.Errorf("failed to create progress file: %w", err)
+			return fmt.Errorf("failed to create progress file '%s': %w", filePath, err)
 		}
 		defer file.Close()
 
@@ -145,7 +137,7 @@ func loadProgress(path string) (Progress, error) {
 		defer file.Close()
 
 		if err := json.NewDecoder(file).Decode(&progress); err != nil {
-			return err
+			return fmt.Errorf("failed to decode progress from file '%s': %w", filePath, err)
 		}
 		return nil
 	})
@@ -158,7 +150,7 @@ func deleteProgress(path string) error {
 	return withMutex(func() error {
 		filePath := getProgressFilePath(path)
 		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to delete progress file: %w", err)
+			return fmt.Errorf("failed to delete progress file '%s': %w", filePath, err)
 		}
 		return nil
 	})
