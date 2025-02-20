@@ -288,7 +288,7 @@ func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error 
 	}
 
 	// 使用 conn.(net.Conn) 将 interface{} 转换为 net.Conn
-	if err := n.SendFileWithProgress(conn.(net.Conn), filePath, relPath, entry); err != nil {
+	if err := n.SendFileWithProgress(conn.(net.Conn), filePath, relPath, &progress); err != nil {
 		return err
 	}
 
@@ -320,41 +320,36 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 		return fmt.Errorf("failed to collect files: %w", err)
 	}
 
-	// 统一发送文件
-	for _, file := range files {
-		// 检查文件是否已经传输完成
-		var entry *ProgressEntry
-		for i := range progress.Entries {
-			if progress.Entries[i].RelPath == file.fullRelPath {
-				entry = &progress.Entries[i]
-				break
+	// 初始化进度条目
+	if len(progress.Entries) == 0 {
+		progress.Entries = make([]ProgressEntry, len(files))
+		for i, file := range files {
+			progress.Entries[i] = ProgressEntry{
+				RelPath:   file.fullRelPath,
+				Offset:    0,
+				Completed: false,
 			}
 		}
+	}
 
-		// 如果文件未传输完成，继续传输
-		if entry == nil {
-			entry = &ProgressEntry{RelPath: file.fullRelPath, Offset: 0, Completed: false}
-			progress.Entries = append(progress.Entries, *entry)
-		}
+	// 统一发送文件
+	for i, file := range files {
+		entry := &progress.Entries[i]
 
 		if !entry.Completed {
 			// 使用 conn.(net.Conn) 将 interface{} 转换为 net.Conn
-			if err := n.SendFileWithProgress(conn.(net.Conn), file.filePath, file.fullRelPath, entry); err != nil {
+			if err := n.SendFileWithProgress(conn.(net.Conn), file.filePath, file.fullRelPath, &progress); err != nil {
 				return err
 			}
 			n.logger.Infof("Sent file: %s", file.fullRelPath)
 
 			// 更新传输进度并保存
-			if err := saveProgress(Progress{
-				Type:    "dir",   // 明确设置为 "dir"
-				Path:    dirPath, // 使用目录的完整路径
-				Entries: progress.Entries,
-			}); err != nil {
+			if err := saveProgress(progress); err != nil {
 				return fmt.Errorf("failed to save progress: %w", err)
 			}
 		}
 	}
-
+	time.Sleep(10 * time.Second)
 	// 传输完成后删除进度文件
 	if err := deleteProgress(dirPath); err != nil {
 		return fmt.Errorf("failed to delete progress file: %w", err)
@@ -364,7 +359,7 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 }
 
 // SendFileWithProgress 发送文件并更新传输进度
-func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath string, entry *ProgressEntry) error {
+func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath string, progress *Progress) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -374,6 +369,18 @@ func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath stri
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	// 找到对应的进度条目
+	var entry *ProgressEntry
+	for i := range progress.Entries {
+		if progress.Entries[i].RelPath == relPath {
+			entry = &progress.Entries[i]
+			break
+		}
+	}
+	if entry == nil {
+		return fmt.Errorf("progress entry not found for file: %s", relPath)
 	}
 
 	// 跳过已传输的部分
@@ -421,11 +428,7 @@ func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath stri
 		entry.Completed = (err == io.EOF)
 
 		// 保存传输进度
-		if err := saveProgress(Progress{
-			Type:    "file",   // 明确设置为 "file"
-			Path:    filePath, // 使用文件的完整路径
-			Entries: []ProgressEntry{*entry},
-		}); err != nil {
+		if err := saveProgress(*progress); err != nil {
 			return fmt.Errorf("failed to save progress: %w", err)
 		}
 
