@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bufio"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"golang.org/x/crypto/blake2b"
 )
@@ -137,10 +139,100 @@ func CalculateFileChecksum(filePath string) (string, error) {
 		return "", fmt.Errorf("failed to create BLAKE2b hash: %w", err)
 	}
 
-	// 将文件内容写入哈希器
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", fmt.Errorf("failed to calculate checksum: %w", err)
+	// 使用带缓冲的读取器
+	reader := bufio.NewReader(file)
+	buffer := make([]byte, 64*1024) // 64KB 缓冲区
+
+	for {
+		// 读取数据到缓冲区
+		n, err := reader.Read(buffer)
+		if err != nil && err != io.EOF {
+			return "", fmt.Errorf("failed to read file: %w", err)
+		}
+
+		// 将数据写入哈希器
+		if n > 0 {
+			hash.Write(buffer[:n])
+		}
+
+		// 如果读取到文件末尾，退出循环
+		if err == io.EOF {
+			break
+		}
 	}
+
+	// 返回哈希值的十六进制字符串表示
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// CalculateFileChecksumParallel 并行计算文件的 BLAKE2b 哈希值
+func CalculateFileChecksumParallel(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// 获取文件大小
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("failed to get file info: %w", err)
+	}
+	fileSize := fileInfo.Size()
+
+	// 创建一个 BLAKE2b 哈希器，输出长度为 16 字节（128 位）
+	hash, err := blake2b.New(16, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create BLAKE2b hash: %w", err)
+	}
+
+	// 定义块大小（例如 1MB）
+	chunkSize := int64(1 * 1024 * 1024)
+	numChunks := (fileSize + chunkSize - 1) / chunkSize
+
+	// 使用 WaitGroup 等待所有 goroutine 完成
+	var wg sync.WaitGroup
+	wg.Add(int(numChunks))
+
+	// 使用互斥锁保护哈希器
+	var mu sync.Mutex
+
+	for i := int64(0); i < numChunks; i++ {
+		go func(chunkIndex int64) {
+			defer wg.Done()
+
+			// 计算当前块的起始位置和大小
+			start := chunkIndex * chunkSize
+			size := chunkSize
+			if start+size > fileSize {
+				size = fileSize - start
+			}
+
+			// 读取当前块
+			buffer := make([]byte, size)
+			_, err := file.ReadAt(buffer, start)
+			if err != nil && err != io.EOF {
+				fmt.Printf("Failed to read chunk %d: %v\n", chunkIndex, err)
+				return
+			}
+
+			// 计算当前块的哈希值
+			chunkHash, err := blake2b.New(16, nil)
+			if err != nil {
+				fmt.Printf("Failed to create chunk hash: %v\n", err)
+				return
+			}
+			chunkHash.Write(buffer)
+
+			// 将当前块的哈希值合并到总哈希值中
+			mu.Lock()
+			hash.Write(chunkHash.Sum(nil))
+			mu.Unlock()
+		}(i)
+	}
+
+	// 等待所有 goroutine 完成
+	wg.Wait()
 
 	// 返回哈希值的十六进制字符串表示
 	return hex.EncodeToString(hash.Sum(nil)), nil
