@@ -16,7 +16,7 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
-// Node represents a peer in the P2P network.
+// Node 代表 P2P 网络中的一个节点。
 type Node struct {
 	Port          string
 	logger        utils.Logger // 系统日志
@@ -32,6 +32,7 @@ type Node struct {
 
 var eventBus = event.GetEventBus()
 
+// subscribeEvents 订阅事件。
 func (n *Node) subscribeEvents() {
 	eventBus.Subscribe(event.EventTypePeerList, n.handlePeerList)
 	eventBus.Subscribe(event.EventTypePeerListRequest, n.handlePeerListRequest)
@@ -42,6 +43,7 @@ func (n *Node) subscribeEvents() {
 	// eventBus.Subscribe(event.EventTypeNodeStatus, n.handleNodeStatus)
 }
 
+// handlePeerList 处理节点列表事件。
 func (n *Node) handlePeerList(event event.Event) {
 	peers := event.Payload.([]string)
 	for _, peer := range peers {
@@ -56,13 +58,14 @@ func (n *Node) handlePeerList(event event.Event) {
 	}
 }
 
+// handlePeerListRequest 处理节点列表请求事件。
 func (n *Node) handlePeerListRequest(event event.Event) {
 	conn := event.Payload.(net.Conn)
 	n.logger.Infof("Received peer list request from: %s", conn.RemoteAddr().String())
 	n.sendPeerList(conn)
 }
 
-// NewNode creates a new Node instance.
+// NewNode 创建一个新的 Node 实例。
 func NewNode(config *Config, logger utils.Logger, executor utils.TaskExecutor) *Node {
 	user := NewUser("")
 
@@ -92,7 +95,7 @@ func NewNode(config *Config, logger utils.Logger, executor utils.TaskExecutor) *
 	return node
 }
 
-// startServer starts the TCP server to listen for incoming connections.
+// startServer 启动 TCP 服务器以监听传入连接。
 func (n *Node) startServer() {
 	ln, err := net.Listen("tcp", ":"+n.Port)
 	if err != nil {
@@ -141,7 +144,7 @@ func (n *Node) startServer() {
 	}
 }
 
-// handleConnection handles incoming messages from a connection.
+// handleConnection 处理来自连接的传入消息。
 func (n *Node) handleConnection(conn net.Conn) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -181,7 +184,7 @@ func (n *Node) handleConnection(conn net.Conn) {
 	}
 }
 
-// closeConnection closes the connection and cleans up resources.
+// closeConnection 关闭连接并清理资源。
 func (n *Node) closeConnection(conn net.Conn, traceID string) {
 	conn.Close()
 	n.net.removeConn(conn)
@@ -192,7 +195,7 @@ func (n *Node) closeConnection(conn net.Conn, traceID string) {
 	}).Info("Connection closed")
 }
 
-// handleMessageWithExecutor uses a Goroutine pool to handle messages.
+// handleMessageWithExecutor 使用 Goroutine 池来处理消息。
 func (n *Node) handleMessageWithExecutor(conn net.Conn, msg Message) {
 	err := n.executor.Submit(func() {
 		n.router.RouteMessage(n, conn, msg)
@@ -204,7 +207,7 @@ func (n *Node) handleMessageWithExecutor(conn net.Conn, msg Message) {
 	}
 }
 
-// startDiscovery periodically broadcasts the peer list to all connected peers.
+// startDiscovery 定期将节点列表广播到所有连接的节点。
 func (n *Node) startDiscovery() {
 	ticker := time.NewTicker(time.Duration(n.config.DiscoveryInterval) * time.Second)
 	defer ticker.Stop()
@@ -229,7 +232,7 @@ func (n *Node) startDiscovery() {
 	}
 }
 
-// startHeartbeat periodically sends ping messages to all connected peers.
+// startHeartbeat 定期向所有连接的节点发送 ping 消息。
 func (n *Node) startHeartbeat() {
 	ticker := time.NewTicker(time.Duration(n.config.HeartbeatInterval) * time.Second)
 	defer ticker.Stop()
@@ -262,7 +265,7 @@ func (n *Node) startHeartbeat() {
 	}
 }
 
-// BroadcastMessage broadcasts a message to all connected peers.
+// BroadcastMessage 将消息广播到所有连接的节点。
 func (n *Node) BroadcastMessage(message string) error {
 	msg := Message{
 		Type:    MsgTypeChat,
@@ -291,7 +294,7 @@ func (n *Node) BroadcastMessage(message string) error {
 	return nil
 }
 
-// SendFile sends a file to a peer using an existing connection.
+// SendFile 使用现有连接将文件发送到节点。
 func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error {
 	// 检查是否已经连接到该 peer
 	conn, ok := n.net.Conns.Load(peerAddr)
@@ -337,7 +340,7 @@ func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error 
 	return nil
 }
 
-// SendDir sends all files in a directory to a peer.
+// SendDir 将目录中的所有文件发送到节点。
 func (n *Node) SendDir(peerAddr string, dirPath string) error {
 	// 检查是否已经连接到该 peer
 	conn, ok := n.net.Conns.Load(peerAddr)
@@ -529,7 +532,7 @@ func (n *Node) collectFiles(dirPath string) ([]struct {
 	return files, nil
 }
 
-// generateTraceID generates a unique trace ID.
+// generateTraceID 生成唯一的跟踪 ID。
 func generateTraceID() string {
 	uuidBytes := uuid.New()
 	encoded := base62.Encode(uuidBytes[:])

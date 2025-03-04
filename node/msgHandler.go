@@ -1,8 +1,6 @@
 package main
 
 // msgHandler.go 包含处理消息的相关功能和工具函数。
-// 该文件导入了多个必要的包，包括网络、JSON 编码、事件处理和日志记录等。
-// 这些导入的包为消息处理提供了基础设施，支持事件的生成、处理和记录。
 import (
 	"bytes"
 	"encoding/json"
