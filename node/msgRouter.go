@@ -22,13 +22,13 @@ func NewMessageRouter(logger utils.Logger, executor utils.TaskExecutor) *Message
 	}
 
 	// 注册所有消息处理器
-	router.RegisterHandler(MessageTypePeerList, &PeerListHandler{})
-	router.RegisterHandler(MessageTypePeerListReq, &PeerListRequestHandler{})
-	router.RegisterHandler(MessageTypeChat, &ChatHandler{})
-	router.RegisterHandler(MessageTypePing, &PingHandler{})
-	router.RegisterHandler(MessageTypePong, &PongHandler{})
-	router.RegisterHandler(MessageTypeFileTransfer, &FileTransferHandler{})
-	router.RegisterHandler(MessageTypeNodeStatus, &NodeStatusHandler{})
+	router.RegisterHandler(MsgTypePeerList, &PeerListHandler{})
+	router.RegisterHandler(MsgTypePeerListReq, &PeerListRequestHandler{})
+	router.RegisterHandler(MsgTypeChat, &ChatHandler{})
+	router.RegisterHandler(MsgTypePing, &PingHandler{})
+	router.RegisterHandler(MsgTypePong, &PongHandler{})
+	router.RegisterHandler(MsgTypeFileTransfer, &FileTransferHandler{})
+	router.RegisterHandler(MsgTypeNodeStatus, &NodeStatusHandler{})
 
 	return router
 }

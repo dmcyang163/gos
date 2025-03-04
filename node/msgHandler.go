@@ -95,7 +95,7 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 
 		if shouldReplyToMessage(msg) {
 			dialogue := n.User.FindDialogueForSender(msg.Sender)
-			sendMessage(n, conn, MessageTypeChat, dialogue)
+			sendMessage(n, conn, MsgTypeChat, dialogue)
 		}
 	}()
 }
@@ -106,7 +106,7 @@ type PingHandler struct{}
 func (h *PingHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	n.logger.Debugf("Received ping from: %s", conn.RemoteAddr().String())
 	// 回复 Pong 消息
-	sendMessage(n, conn, MessageTypePong, "")
+	sendMessage(n, conn, MsgTypePong, "")
 }
 
 // PongHandler handles "pong" messages.
@@ -235,7 +235,7 @@ func (h *NodeStatusHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 		return
 	}
 
-	sendMessage(n, conn, MessageTypeNodeStatus, string(statusBytes))
+	sendMessage(n, conn, MsgTypeNodeStatus, string(statusBytes))
 }
 
 // shouldReplyToMessage decides whether to reply to a message.

@@ -128,7 +128,7 @@ func (nm *NetworkManager) sendChunkWithRetry(conn net.Conn, fileInfo os.FileInfo
 	checksum := utils.CalculateChecksum(chunk)
 
 	msg := Message{
-		Type:     MessageTypeFileTransfer,
+		Type:     MsgTypeFileTransfer,
 		FileName: fileInfo.Name(),
 		FileSize: fileInfo.Size(),
 		RelPath:  relPath,

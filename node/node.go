@@ -202,7 +202,7 @@ func (n *Node) startHeartbeat() {
 		for _, conn := range conns {
 			err := n.executor.Submit(func() {
 				msg := Message{
-					Type:    MessageTypePing,
+					Type:    MsgTypePing,
 					Data:    "",
 					Sender:  n.User.Name,
 					Address: ":" + n.Port,
@@ -228,7 +228,7 @@ func (n *Node) startHeartbeat() {
 // BroadcastMessage broadcasts a message to all connected peers.
 func (n *Node) BroadcastMessage(message string) error {
 	msg := Message{
-		Type:    MessageTypeChat,
+		Type:    MsgTypeChat,
 		Data:    message,
 		Sender:  n.User.Name,
 		Address: ":" + n.Port,

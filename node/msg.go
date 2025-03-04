@@ -21,17 +21,17 @@ var (
 	jniter = jsoniter.ConfigFastest
 )
 
-// MessageType 定义消息类型
+// MsgType 定义消息类型
 const (
-	MessageTypeChat            = "chat"              // 聊天消息
-	MessageTypePeerList        = "peer_list"         // 节点列表
-	MessageTypePeerListReq     = "peer_list_request" // 请求节点列表
-	MessageTypePing            = "ping"              // 心跳消息
-	MessageTypePong            = "pong"              // 心跳响应
-	MessageTypeFileTransfer    = "file_transfer"     // 文件传输
-	MessageTypeFileTransferAck = "file_transfer_ack" // 文件传输确认
-	MessageTypeFileTransferNak = "file_transfer_nak" // 文件传输拒绝
-	MessageTypeNodeStatus      = "node_status"       // 节点状态
+	MsgTypeChat            = "chat"              // 聊天消息
+	MsgTypePeerList        = "peer_list"         // 节点列表
+	MsgTypePeerListReq     = "peer_list_request" // 请求节点列表
+	MsgTypePing            = "ping"              // 心跳消息
+	MsgTypePong            = "pong"              // 心跳响应
+	MsgTypeFileTransfer    = "file_transfer"     // 文件传输
+	MsgTypeFileTransferAck = "file_transfer_ack" // 文件传输确认
+	MsgTypeFileTransferNak = "file_transfer_nak" // 文件传输拒绝
+	MsgTypeNodeStatus      = "node_status"       // 节点状态
 )
 
 // Message 表示节点之间交换的消息
@@ -54,25 +54,25 @@ type Message struct {
 
 var (
 	// 定义需要压缩的消息类型
-	compressedMessageTypes = map[string]bool{
-		MessageTypeChat:         true,
-		MessageTypeFileTransfer: true,
+	compressedMsgTypes = map[string]bool{
+		MsgTypeChat:         true,
+		MsgTypeFileTransfer: true,
 	}
 
 	// 定义需要加密的消息类型
-	encryptedMessageTypes = map[string]bool{
-		MessageTypeChat: true,
+	encryptedMsgTypes = map[string]bool{
+		MsgTypeChat: true,
 	}
 )
 
 // shouldCompressMessage 判断消息是否需要压缩
 func shouldCompressMessage(msgType string) bool {
-	return compressedMessageTypes[msgType]
+	return compressedMsgTypes[msgType]
 }
 
 // shouldEncryptMessage 判断消息是否需要加密
 func shouldEncryptMessage(msgType string) bool {
-	return encryptedMessageTypes[msgType]
+	return encryptedMsgTypes[msgType]
 }
 
 // encodeMessage 将消息序列化为 JSON 字节
