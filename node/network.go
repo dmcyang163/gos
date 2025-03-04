@@ -77,14 +77,14 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 
 	for {
 		// 读取文件块
-		n, err := nm.readFileChunk(file, buffer[:chunkSize])
+		bytesRead, err := nm.readFileChunk(file, buffer[:chunkSize])
 		if err != nil && err != io.EOF {
 			return nil, fmt.Errorf("failed to read file chunk: %w", err)
 		}
 
 		// 异步发送文件块
 		nm.executor.SubmitWithPriority(func() {
-			err := nm.sendChunkWithRetry(conn, fileInfo, relPath, buffer[:n], chunkID, err == io.EOF)
+			err := nm.sendChunkWithRetry(conn, fileInfo, relPath, buffer[:bytesRead], chunkID, err == io.EOF)
 			resultChan <- err
 		}, 10)
 
@@ -93,7 +93,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 			return nil, fmt.Errorf("failed to send file chunk: %w", err)
 		}
 
-		totalBytesSent += int64(n)
+		totalBytesSent += int64(bytesRead)
 		chunkID++
 
 		// 动态调整块大小
