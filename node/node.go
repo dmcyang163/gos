@@ -440,7 +440,7 @@ func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath stri
 	}
 
 	// 更新传输进度
-	entry.Offset = (*fileInfo).Size()
+	entry.Offset = fileInfo.Size()
 	entry.Completed = true
 
 	// 保存传输进度

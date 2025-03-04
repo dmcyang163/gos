@@ -44,7 +44,7 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 }
 
 // SendFile 异步地以块的形式发送文件，并返回文件信息
-func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string, offset int64) (*os.FileInfo, error) {
+func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string, offset int64) (os.FileInfo, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -110,7 +110,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 		"duration":   time.Since(startTime).String(),
 	}).Info("File sent successfully")
 
-	return &fileInfo, nil
+	return fileInfo, nil
 }
 
 // readFileChunk 读取文件的指定块
