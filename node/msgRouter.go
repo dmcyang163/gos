@@ -1,4 +1,5 @@
 // msgRouter.go
+
 package main
 
 import (
@@ -6,13 +7,13 @@ import (
 	"node/utils"
 )
 
-// MessageRouter routes messages to the appropriate handler.
+// MessageRouter 将消息路由到适当的处理程序。
 type MessageRouter struct {
 	handlers map[string]MessageHandler
 	logger   utils.Logger
 }
 
-// NewMessageRouter creates a new MessageRouter instance and registers all handlers.
+// NewMessageRouter 创建一个新的 MessageRouter 实例并注册所有处理程序。
 func NewMessageRouter(logger utils.Logger) *MessageRouter {
 	router := &MessageRouter{
 		handlers: make(map[string]MessageHandler),
@@ -31,12 +32,12 @@ func NewMessageRouter(logger utils.Logger) *MessageRouter {
 	return router
 }
 
-// RegisterHandler registers a handler for a specific message type.
+// RegisterHandler 注册特定消息类型的处理程序。
 func (r *MessageRouter) RegisterHandler(msgType string, handler MessageHandler) {
 	r.handlers[msgType] = handler
 }
 
-// RouteMessage routes a message to the appropriate handler.
+// RouteMessage 将消息路由到适当的处理程序。
 func (r *MessageRouter) RouteMessage(n *Node, conn net.Conn, msg Message) {
 	handler, ok := r.handlers[msg.Type]
 	if !ok {
