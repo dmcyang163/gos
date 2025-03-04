@@ -5,18 +5,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"node/utils"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ProgressEntry 表示一个文件的传输进度
 type ProgressEntry struct {
 	RelPath   string `json:"relPath"`   // 文件的相对路径
+	FileSize  int64  `json:"fileSize"`  // 文件的总大小
+	Checksum  string `json:"checksum"`  // 文件的校验码（哈希码）
 	Offset    int64  `json:"offset"`    // 已传输的字节数
 	Completed bool   `json:"completed"` // 是否传输完成
+	StartTime string `json:"startTime"` // 传输开始时间（格式：2006-01-02 15:04:05.000）
+	EndTime   string `json:"endTime"`   // 传输结束时间（格式：2006-01-02 15:04:05.000）
 }
 
 // Progress 表示文件或目录的传输进度
@@ -138,6 +144,30 @@ func loadProgress(path string) (Progress, error) {
 
 		if err := json.NewDecoder(file).Decode(&progress); err != nil {
 			return fmt.Errorf("failed to decode progress from file '%s': %w", filePath, err)
+		}
+
+		// 确保每个条目的 StartTime、EndTime、FileSize 和 Checksum 有默认值
+		for i := range progress.Entries {
+			if progress.Entries[i].StartTime == "" {
+				progress.Entries[i].StartTime = time.Now().Format("2006-01-02 15:04:05.000")
+			}
+			if progress.Entries[i].EndTime == "" {
+				progress.Entries[i].EndTime = ""
+			}
+			if progress.Entries[i].FileSize == 0 {
+				// 如果 FileSize 为 0，尝试从文件系统中获取文件大小
+				fullPath := filepath.Join(path, progress.Entries[i].RelPath)
+				if fi, err := os.Stat(fullPath); err == nil {
+					progress.Entries[i].FileSize = fi.Size()
+				}
+			}
+			if progress.Entries[i].Checksum == "" {
+				// 如果 Checksum 为空，尝试计算文件的哈希码
+				fullPath := filepath.Join(path, progress.Entries[i].RelPath)
+				if checksum, err := utils.CalculateFileChecksum(fullPath); err == nil {
+					progress.Entries[i].Checksum = checksum
+				}
+			}
 		}
 		return nil
 	})

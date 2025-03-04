@@ -10,6 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+
+	"golang.org/x/crypto/blake2b"
 )
 
 // AESKeySize 定义了允许的 AES 密钥长度 (定义允许的AES密钥长度)
@@ -118,4 +121,27 @@ func CalculateChecksum(data []byte) string {
 	// return hex.EncodeToString(hash[:])
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
+}
+
+// CalculateFileChecksum 计算文件的 BLAKE2b 哈希值，输出长度为 16 字节（128 位）
+func CalculateFileChecksum(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// 创建一个 BLAKE2b 哈希器，输出长度为 16 字节（128 位）
+	hash, err := blake2b.New(16, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create BLAKE2b hash: %w", err)
+	}
+
+	// 将文件内容写入哈希器
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", fmt.Errorf("failed to calculate checksum: %w", err)
+	}
+
+	// 返回哈希值的十六进制字符串表示
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }

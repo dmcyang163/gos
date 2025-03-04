@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"node/event"
@@ -371,9 +372,9 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 	}
 
 	// 传输完成后删除进度文件
-	if err := deleteProgress(dirPath); err != nil {
-		return fmt.Errorf("failed to delete progress file: %w", err)
-	}
+	// if err := deleteProgress(dirPath); err != nil {
+	// 	return fmt.Errorf("failed to delete progress file: %w", err)
+	// }
 
 	return nil
 }
@@ -429,15 +430,34 @@ func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath stri
 		return nil
 	}
 
-	// 调用 network.go 中的 SendFile 函数，传入当前的偏移量，并接收文件信息
-	fileInfo, err := n.net.SendFile(conn, filePath, relPath, entry.Offset)
+	// 获取文件信息
+	fileInfo, err := os.Stat(filePath)
 	if err != nil {
+		return fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	// 设置文件大小
+	entry.FileSize = fileInfo.Size()
+
+	// 计算并设置文件的哈希码
+	checksum, err := utils.CalculateFileChecksum(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to calculate file checksum: %w", err)
+	}
+	entry.Checksum = checksum
+
+	// 设置传输开始时间
+	entry.StartTime = time.Now().Format("2006-01-02 15:04:05.000")
+
+	// 调用 network.go 中的 SendFile 函数，传入当前的偏移量，并接收文件信息
+	if _, err := n.net.SendFile(conn, filePath, relPath, entry.Offset); err != nil {
 		return fmt.Errorf("failed to send file: %w", err)
 	}
 
 	// 更新传输进度
 	entry.Offset = fileInfo.Size()
 	entry.Completed = true
+	entry.EndTime = time.Now().Format("2006-01-02 15:04:05.000") // 设置传输结束时间
 
 	// 保存传输进度
 	if err := saveProgress(*progress); err != nil {
