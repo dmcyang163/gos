@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -439,61 +438,18 @@ func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath stri
 		return fmt.Errorf("progress entry not found for file: %s", relPath)
 	}
 
-	// 跳过已传输的部分
-	if _, err := file.Seek(entry.Offset, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to seek file: %w", err)
+	// 调用 network.go 中的 SendFile 函数
+	if err := n.net.SendFile(conn, filePath, relPath, entry.Offset); err != nil {
+		return fmt.Errorf("failed to send file: %w", err)
 	}
 
-	// 初始块大小
-	chunkSize := 1024 * 1024        // 1MB
-	minChunkSize := 512 * 1024      // 最小块大小 512KB
-	maxChunkSize := 4 * 1024 * 1024 // 最大块大小 4MB
+	// 更新传输进度
+	entry.Offset = fileInfo.Size()
+	entry.Completed = true
 
-	buffer := make([]byte, maxChunkSize) // 直接分配缓冲区
-
-	chunkID := 0
-	startTime := time.Now()
-	var totalBytesSent int64
-
-	// 用于同步发送结果的 channel
-	resultChan := make(chan error, 1)
-
-	for {
-		// 读取文件块，将 n 重命名为 bytesRead
-		bytesRead, err := n.net.readFileChunk(file, buffer[:chunkSize])
-		if err != nil && err != io.EOF {
-			return fmt.Errorf("failed to read file chunk: %w", err)
-		}
-
-		// 异步发送文件块
-		n.net.executor.SubmitWithPriority(func() {
-			err := n.net.sendChunkWithRetry(conn, fileInfo, relPath, buffer[:bytesRead], chunkID, err == io.EOF)
-			resultChan <- err
-		}, 10)
-
-		// 等待发送结果
-		if err := <-resultChan; err != nil {
-			return fmt.Errorf("failed to send file chunk: %w", err)
-		}
-
-		totalBytesSent += int64(bytesRead)
-		chunkID++
-
-		// 更新传输进度
-		entry.Offset += int64(bytesRead)
-		entry.Completed = (err == io.EOF)
-
-		// 保存传输进度
-		if err := saveProgress(*progress); err != nil {
-			return fmt.Errorf("failed to save progress: %w", err)
-		}
-
-		// 动态调整块大小
-		chunkSize = n.net.calculateChunkSize(chunkSize, minChunkSize, maxChunkSize, startTime, totalBytesSent)
-
-		if err == io.EOF {
-			break
-		}
+	// 保存传输进度
+	if err := saveProgress(*progress); err != nil {
+		return fmt.Errorf("failed to save progress: %w", err)
 	}
 
 	return nil
