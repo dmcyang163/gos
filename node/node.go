@@ -302,24 +302,10 @@ func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error 
 		return fmt.Errorf("no connection to peer: %s", peerAddr)
 	}
 
-	// 加载传输进度
-	progress, err := loadProgress(filePath)
+	progress, entry, err := n.prepareFileTransfer(filePath, relPath)
 	if err != nil {
-		return fmt.Errorf("failed to load progress: %w", err)
+		return err
 	}
-
-	// 如果没有进度条目，初始化一个
-	if len(progress.Entries) == 0 {
-		progress = Progress{
-			Type:    "file",   // 明确设置为 "file"
-			Path:    filePath, // 使用文件的完整路径
-			Entries: []ProgressEntry{{RelPath: relPath, Offset: 0, Completed: false}},
-		}
-	}
-	n.logger.Debugf("正在发送文件: %s, 类型: %s", progress.Path, progress.Type)
-
-	// 获取文件的传输进度
-	entry := &progress.Entries[0]
 
 	// 如果文件已传输完成，跳过
 	if entry.Completed {
@@ -338,6 +324,29 @@ func (n *Node) SendFile(peerAddr string, filePath string, relPath string) error 
 	}
 
 	return nil
+}
+
+// prepareFileTransfer 准备文件传输，加载进度和初始化进度条目
+func (n *Node) prepareFileTransfer(filePath string, relPath string) (Progress, *ProgressEntry, error) {
+	// 加载传输进度
+	progress, err := loadProgress(filePath)
+	if err != nil {
+		return Progress{}, nil, fmt.Errorf("failed to load progress: %w", err)
+	}
+
+	// 如果没有进度条目，初始化一个
+	if len(progress.Entries) == 0 {
+		progress = Progress{
+			Type:    "file",   // 明确设置为 "file"
+			Path:    filePath, // 使用文件的完整路径
+			Entries: []ProgressEntry{{RelPath: relPath, Offset: 0, Completed: false}},
+		}
+	}
+	n.logger.Debugf("正在发送文件: %s, 类型: %s", progress.Path, progress.Type)
+
+	// 获取文件的传输进度
+	entry := &progress.Entries[0]
+	return progress, entry, nil
 }
 
 // SendDir 将目录中的所有文件发送到节点。
