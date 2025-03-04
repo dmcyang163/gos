@@ -17,14 +17,14 @@ const (
 	minMessageSize = 4                // 最小长度为4字节（长度字段本身）
 )
 
-// NetworkManager handles network connections.
+// NetworkManager 处理网络连接
 type NetworkManager struct {
 	Conns    sync.Map
 	logger   utils.Logger
 	executor utils.TaskExecutor
 }
 
-// NewNetworkManager creates a new NetworkManager instance.
+// NewNetworkManager 创建一个新的 NetworkManager 实例
 func NewNetworkManager(logger utils.Logger, executor utils.TaskExecutor) *NetworkManager {
 	return &NetworkManager{
 		Conns:    sync.Map{},
@@ -33,17 +33,17 @@ func NewNetworkManager(logger utils.Logger, executor utils.TaskExecutor) *Networ
 	}
 }
 
-// addConn adds a connection to the network.
+// addConn 添加一个连接到网络
 func (nm *NetworkManager) addConn(conn net.Conn) {
 	nm.Conns.Store(conn.RemoteAddr().String(), conn)
 }
 
-// removeConn removes a connection from the network.
+// removeConn 从网络中移除一个连接
 func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
 }
 
-// SendFile sends a file in chunks asynchronously.
+// SendFile 异步地以块的形式发送文件
 func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string, offset int64) error {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -173,7 +173,7 @@ func (nm *NetworkManager) calculateChunkSize(currentChunkSize, minChunkSize, max
 	return currentChunkSize
 }
 
-// SendMessage sends a message to a connection.
+// SendMessage 发送消息到连接
 func (nm *NetworkManager) SendMessage(conn net.Conn, msg Message) error {
 	// 打包消息
 	msgBytes, err := PackMessage(msg)
@@ -198,7 +198,7 @@ func (nm *NetworkManager) SendRawMessage(conn net.Conn, data []byte) error {
 	return err
 }
 
-// ReadMessage reads a message from the connection.
+// ReadMessage 从连接读取消息
 func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	// 读取消息长度
 	length, err := nm.readLength(conn)
@@ -233,7 +233,7 @@ func (nm *NetworkManager) ReadMessage(conn net.Conn) (Message, error) {
 	return msg, nil
 }
 
-// readLength reads the length of the message as a 4-byte big-endian integer.
+// readLength 读取消息的长度，长度为 4 字节大端整数
 func (nm *NetworkManager) readLength(conn net.Conn) (uint32, error) {
 	lengthBytes := make([]byte, 4)
 	retries := 3 // 最大重试次数
@@ -268,7 +268,7 @@ func (nm *NetworkManager) readLength(conn net.Conn) (uint32, error) {
 	return 0, fmt.Errorf("failed to read length after %d retries", retries)
 }
 
-// GetConns returns a list of active connections.
+// GetConns 返回活跃连接的列表
 func (nm *NetworkManager) GetConns() []net.Conn {
 	conns := make([]net.Conn, 0)
 	nm.Conns.Range(func(key, value interface{}) bool {
