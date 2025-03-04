@@ -120,7 +120,7 @@ func (n *Node) establishPeerConnection(peerAddr string) (net.Conn, error) {
 
 // requestPeerList 从连接中请求节点列表
 func (n *Node) requestPeerList(conn net.Conn) {
-	msg := Message{Type: MsgTypePeerListReq, Data: "", Sender: n.User.Name, Address: ":" + n.Port, ID: generateMessageID()}
+	msg := Message{Type: MsgTypePeerListReq, Data: "", Sender: n.User.Name, Address: ":" + n.Port, ID: utils.GenerateMessageID()}
 	if err := n.net.SendMessage(conn, msg); err != nil {
 		n.logger.Errorf("Error requesting peer list: %v", err)
 	}
@@ -157,7 +157,7 @@ func (n *Node) sendPeerList(conn net.Conn) error {
 		Data:    peerList,
 		Sender:  n.User.Name,
 		Address: ":" + n.Port,
-		ID:      generateMessageID(),
+		ID:      utils.GenerateMessageID(),
 	}
 
 	if err := n.net.SendMessage(conn, msg); err != nil {

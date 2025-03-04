@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/google/uuid"
-	"github.com/jxskiss/base62"
 	"github.com/sirupsen/logrus"
 )
 
@@ -36,7 +34,7 @@ func sendMessage(n *Node, conn net.Conn, msgType string, data string) {
 		Data:    data,
 		Sender:  n.User.Name,
 		Address: ":" + n.Port,
-		ID:      generateMessageID(),
+		ID:      utils.GenerateMessageID(),
 	})
 }
 
@@ -272,14 +270,4 @@ func (h *NodeStatusHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 func shouldReplyToMessage(msg Message) bool {
 	// 只有在消息包含 "hello" 时才回复
 	return strings.Contains(msg.Data, "hello")
-}
-
-// generateMessageID 生成唯一的 message ID。
-func generateMessageID() string {
-	// return uuid.New().String()
-
-	uuidBytes := uuid.New()
-	encoded := base62.Encode(uuidBytes[:])
-	// 将 UUID 转换为 base62 编码
-	return string(encoded)
 }

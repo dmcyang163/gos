@@ -3,15 +3,11 @@ package main
 import (
 	"fmt"
 	"net"
-	"os"
-	"path/filepath"
 	"time"
 
 	"node/event"
 	"node/utils"
 
-	"github.com/google/uuid"
-	"github.com/jxskiss/base62"
 	"github.com/patrickmn/go-cache"
 )
 
@@ -151,7 +147,7 @@ func (n *Node) handleConnection(conn net.Conn) {
 		}
 	}()
 
-	traceID := generateTraceID()
+	traceID := utils.GenerateTraceID()
 	n.logger.WithFields(map[string]interface{}{
 		"trace_id": traceID,
 	}).Info("Handling connection")
@@ -245,7 +241,7 @@ func (n *Node) startHeartbeat() {
 					Data:    "",
 					Sender:  n.User.Name,
 					Address: ":" + n.Port,
-					ID:      generateMessageID(),
+					ID:      utils.GenerateMessageID(),
 				}
 				if err := n.net.SendMessage(conn, msg); err != nil {
 					n.logger.WithFields(map[string]interface{}{
@@ -271,7 +267,7 @@ func (n *Node) BroadcastMessage(message string) error {
 		Data:    message,
 		Sender:  n.User.Name,
 		Address: ":" + n.Port,
-		ID:      generateMessageID(),
+		ID:      utils.GenerateMessageID(),
 	}
 
 	conns := n.net.GetConns()
@@ -367,10 +363,10 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 
 		if !entry.Completed {
 			// 使用 conn.(net.Conn) 将 interface{} 转换为 net.Conn
-			if err := n.SendFileWithProgress(conn.(net.Conn), file.filePath, file.fullRelPath, &progress); err != nil {
+			if err := n.SendFileWithProgress(conn.(net.Conn), file.FilePath, file.FullRelPath, &progress); err != nil {
 				return err
 			}
-			n.logger.Infof("Sent file: %s", file.fullRelPath)
+			n.logger.Infof("Sent file: %s", file.FullRelPath)
 		}
 	}
 
@@ -384,8 +380,8 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 
 // prepareDirTransfer 准备目录传输，加载进度和收集文件信息
 func (n *Node) prepareDirTransfer(dirPath string) (Progress, []struct {
-	filePath    string
-	fullRelPath string
+	FilePath    string
+	FullRelPath string
 }, error) {
 	// 加载目录传输进度
 	progress, err := loadProgress(dirPath)
@@ -394,7 +390,7 @@ func (n *Node) prepareDirTransfer(dirPath string) (Progress, []struct {
 	}
 
 	// 收集所有文件的路径和相对路径
-	files, err := n.collectFiles(dirPath)
+	files, err := utils.CollectFiles(dirPath)
 	if err != nil {
 		return Progress{}, nil, fmt.Errorf("failed to collect files: %w", err)
 	}
@@ -404,7 +400,7 @@ func (n *Node) prepareDirTransfer(dirPath string) (Progress, []struct {
 		progress.Entries = make([]ProgressEntry, len(files))
 		for i, file := range files {
 			progress.Entries[i] = ProgressEntry{
-				RelPath:   file.fullRelPath,
+				RelPath:   file.FullRelPath,
 				Offset:    0,
 				Completed: false,
 			}
@@ -449,65 +445,4 @@ func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath stri
 	}
 
 	return nil
-}
-
-// collectFiles 收集目录下的所有文件信息
-func (n *Node) collectFiles(dirPath string) ([]struct {
-	filePath    string
-	fullRelPath string
-}, error) {
-	// 检查目录是否存在
-	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("directory does not exist: %s", dirPath)
-	}
-
-	// 获取目录名字
-	dirName := filepath.Base(dirPath)
-
-	// 收集所有文件的路径和相对路径
-	var files []struct {
-		filePath    string
-		fullRelPath string
-	}
-
-	err := filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// 忽略目录，只发送文件
-		if info.IsDir() {
-			return nil
-		}
-
-		// 计算相对路径
-		relPath, err := filepath.Rel(dirPath, filePath)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path: %w", err)
-		}
-
-		// 将 dirName 作为 relPath 的父目录
-		fullRelPath := filepath.Join(dirName, relPath)
-
-		// 收集文件信息
-		files = append(files, struct {
-			filePath    string
-			fullRelPath string
-		}{filePath, fullRelPath})
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to walk directory: %w", err)
-	}
-
-	return files, nil
-}
-
-// generateTraceID 生成唯一的跟踪 ID。
-func generateTraceID() string {
-	uuidBytes := uuid.New()
-	encoded := base62.Encode(uuidBytes[:])
-	return string(encoded)
 }
