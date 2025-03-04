@@ -3,6 +3,12 @@ package event
 
 import "sync"
 
+var eventBus = NewEventBus()
+
+func GetEventBus() *EventBus {
+	return eventBus
+}
+
 type EventBus struct {
 	subscribers map[EventType][]EventHandler
 	lock        sync.RWMutex

@@ -10,15 +10,13 @@ import (
 type MessageRouter struct {
 	handlers map[string]MessageHandler
 	logger   utils.Logger
-	executor utils.TaskExecutor
 }
 
 // NewMessageRouter creates a new MessageRouter instance and registers all handlers.
-func NewMessageRouter(logger utils.Logger, executor utils.TaskExecutor) *MessageRouter {
+func NewMessageRouter(logger utils.Logger) *MessageRouter {
 	router := &MessageRouter{
 		handlers: make(map[string]MessageHandler),
 		logger:   logger,
-		executor: executor,
 	}
 
 	// 注册所有消息处理器

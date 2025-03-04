@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"node/event"
 	"node/utils"
 
 	"github.com/google/uuid"
@@ -29,30 +30,66 @@ type Node struct {
 	executor      utils.TaskExecutor
 }
 
+var eventBus = event.GetEventBus()
+
+func (n *Node) subscribeEvents() {
+	eventBus.Subscribe(event.EventTypePeerList, n.handlePeerList)
+	eventBus.Subscribe(event.EventTypePeerListRequest, n.handlePeerListRequest)
+	// eventBus.Subscribe(event.EventTypeChat, n.handleChat)
+	// eventBus.Subscribe(event.EventTypePing, n.handlePing)
+	// eventBus.Subscribe(event.EventTypePong, n.handlePong)
+	// eventBus.Subscribe(event.EventTypeFileTransfer, n.handleFileTransfer)
+	// eventBus.Subscribe(event.EventTypeNodeStatus, n.handleNodeStatus)
+}
+
+func (n *Node) handlePeerList(event event.Event) {
+	peers := event.Payload.([]string)
+	for _, peer := range peers {
+		if peer == ":"+n.Port {
+			continue // 跳过自身
+		}
+
+		if _, loaded := n.peers.KnownPeers.LoadOrStore(peer, PeerInfo{Address: peer, LastSeen: time.Now()}); !loaded {
+			n.logger.Infof("Discovered new peer: %s", peer)
+			go n.connectToPeer(peer)
+		}
+	}
+}
+
+func (n *Node) handlePeerListRequest(event event.Event) {
+	conn := event.Payload.(net.Conn)
+	n.logger.Infof("Received peer list request from: %s", conn.RemoteAddr().String())
+	n.sendPeerList(conn)
+}
+
 // NewNode creates a new Node instance.
 func NewNode(config *Config, logger utils.Logger, executor utils.TaskExecutor) *Node {
 	user := NewUser("")
 
 	// 初始化消息路由器
-	router := NewMessageRouter(logger, executor)
+	router := NewMessageRouter(logger)
 
 	// 初始化 NetworkManager 和 PeerManager
 	netManager := NewNetworkManager(logger, executor)
 	peerManager := NewPeerManager(logger, executor)
 
-	return &Node{
-		Port:       config.Port,
-		logger:     logger,                                 // 系统日志
-		chatLogger: utils.NewLogger("log/chat.log", false), // 聊天日志
-		config:     config,
-		User:       user,
-
-		processedMsgs: cache.New(5*time.Minute, 10*time.Minute), // 初始化 processedMsgs，设置默认过期时间为 5 分钟，清理间隔为 10 分钟
+	node := &Node{
+		Port:          config.Port,
+		logger:        logger,
+		chatLogger:    utils.NewLogger("log/chat.log", false),
+		config:        config,
+		User:          user,
+		processedMsgs: cache.New(5*time.Minute, 10*time.Minute),
 		net:           netManager,
 		peers:         peerManager,
 		router:        router,
 		executor:      executor,
 	}
+
+	// 订阅事件
+	node.subscribeEvents()
+
+	return node
 }
 
 // startServer starts the TCP server to listen for incoming connections.

@@ -1,9 +1,13 @@
 package main
 
+// msgHandler.go 包含处理消息的相关功能和工具函数。
+// 该文件导入了多个必要的包，包括网络、JSON 编码、事件处理和日志记录等。
+// 这些导入的包为消息处理提供了基础设施，支持事件的生成、处理和记录。
 import (
 	"bytes"
 	"encoding/json"
 	"net"
+	"node/event"
 	"node/utils"
 	"os"
 	"path/filepath"
@@ -52,16 +56,22 @@ func (h *PeerListHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 		return
 	}
 
-	for _, peer := range peers {
-		if peer == ":"+n.Port {
-			continue // 跳过自身
-		}
+	// for _, peer := range peers {
+	// 	if peer == ":"+n.Port {
+	// 		continue // 跳过自身
+	// 	}
 
-		if _, loaded := n.peers.KnownPeers.LoadOrStore(peer, PeerInfo{Address: peer, LastSeen: time.Now()}); !loaded {
-			n.logger.Infof("Discovered new peer: %s", peer)
-			go n.connectToPeer(peer)
-		}
-	}
+	// 	if _, loaded := n.peers.KnownPeers.LoadOrStore(peer, PeerInfo{Address: peer, LastSeen: time.Now()}); !loaded {
+	// 		n.logger.Infof("Discovered new peer: %s", peer)
+	// 		go n.connectToPeer(peer)
+	// 	}
+	// }
+
+	// 发布 PeerList 事件
+	event.GetEventBus().Publish(event.Event{
+		Type:    event.EventTypePeerList,
+		Payload: peers,
+	})
 }
 
 // PeerListRequestHandler 处理 "peer_list_request" 消息。
@@ -69,7 +79,13 @@ type PeerListRequestHandler struct{}
 
 func (h *PeerListRequestHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	n.logger.Infof("Received peer list request from: %s", conn.RemoteAddr().String())
-	n.sendPeerList(conn)
+	// n.sendPeerList(conn)
+
+	// 发布 PeerListRequest 事件
+	event.GetEventBus().Publish(event.Event{
+		Type:    event.EventTypePeerListRequest,
+		Payload: conn,
+	})
 }
 
 // ChatHandler 处理 "chat" 消息。
