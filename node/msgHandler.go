@@ -157,7 +157,8 @@ func (h *FileTransferHandler) HandleMessage(n *Node, conn net.Conn, msg Message)
 	fb.mu.Unlock()
 
 	// 如果是最后一块，则写入文件
-	if msg.IsLast {
+	// 检查是否已接收完所有数据
+	if fb.isFileComplete() {
 		go h.writeFile(n, msg.FileName, fb, msg.RelPath)
 		h.fileBuffers.Delete(msg.RelPath)
 	}
@@ -209,6 +210,21 @@ type fileBuffer struct {
 	mu     sync.Mutex
 	chunks map[int][]byte // 文件块
 	size   int64          // 文件总大小
+}
+
+// isFileComplete 检查是否已接收完整个文件
+func (fb *fileBuffer) isFileComplete() bool {
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+
+	// 计算所有块的总大小
+	var totalSize int64
+	for _, chunk := range fb.chunks {
+		totalSize += int64(len(chunk))
+	}
+
+	// 判断是否达到文件的总大小
+	return totalSize >= fb.size
 }
 
 // NodeStatusHandler handles "node_status" messages.
