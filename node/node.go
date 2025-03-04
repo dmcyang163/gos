@@ -348,28 +348,9 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 		return fmt.Errorf("no connection to peer: %s", peerAddr)
 	}
 
-	// 加载目录传输进度
-	progress, err := loadProgress(dirPath)
+	progress, files, err := n.prepareDirTransfer(dirPath)
 	if err != nil {
-		return fmt.Errorf("failed to load directory progress: %w", err)
-	}
-
-	// 收集所有文件的路径和相对路径
-	files, err := n.collectFiles(dirPath)
-	if err != nil {
-		return fmt.Errorf("failed to collect files: %w", err)
-	}
-
-	// 初始化进度条目
-	if len(progress.Entries) == 0 {
-		progress.Entries = make([]ProgressEntry, len(files))
-		for i, file := range files {
-			progress.Entries[i] = ProgressEntry{
-				RelPath:   file.fullRelPath,
-				Offset:    0,
-				Completed: false,
-			}
-		}
+		return err
 	}
 
 	// 统一发送文件
@@ -391,6 +372,37 @@ func (n *Node) SendDir(peerAddr string, dirPath string) error {
 	}
 
 	return nil
+}
+
+// prepareDirTransfer 准备目录传输，加载进度和收集文件信息
+func (n *Node) prepareDirTransfer(dirPath string) (Progress, []struct {
+	filePath    string
+	fullRelPath string
+}, error) {
+	// 加载目录传输进度
+	progress, err := loadProgress(dirPath)
+	if err != nil {
+		return Progress{}, nil, fmt.Errorf("failed to load directory progress: %w", err)
+	}
+
+	// 收集所有文件的路径和相对路径
+	files, err := n.collectFiles(dirPath)
+	if err != nil {
+		return Progress{}, nil, fmt.Errorf("failed to collect files: %w", err)
+	}
+
+	// 初始化进度条目
+	if len(progress.Entries) == 0 {
+		progress.Entries = make([]ProgressEntry, len(files))
+		for i, file := range files {
+			progress.Entries[i] = ProgressEntry{
+				RelPath:   file.fullRelPath,
+				Offset:    0,
+				Completed: false,
+			}
+		}
+	}
+	return progress, files, nil
 }
 
 // SendFileWithProgress 发送文件并更新传输进度
