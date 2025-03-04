@@ -415,17 +415,6 @@ func (n *Node) prepareDirTransfer(dirPath string) (Progress, []struct {
 
 // SendFileWithProgress 发送文件并更新传输进度
 func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath string, progress *Progress) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
-	}
-
 	// 找到对应的进度条目
 	var entry *ProgressEntry
 	for i := range progress.Entries {
@@ -438,13 +427,20 @@ func (n *Node) SendFileWithProgress(conn net.Conn, filePath string, relPath stri
 		return fmt.Errorf("progress entry not found for file: %s", relPath)
 	}
 
-	// 调用 network.go 中的 SendFile 函数
-	if err := n.net.SendFile(conn, filePath, relPath, entry.Offset); err != nil {
+	// 如果文件已传输完成，跳过
+	if entry.Completed {
+		n.logger.Infof("File already sent: %s", relPath)
+		return nil
+	}
+
+	// 调用 network.go 中的 SendFile 函数，传入当前的偏移量，并接收文件信息
+	fileInfo, err := n.net.SendFile(conn, filePath, relPath, entry.Offset)
+	if err != nil {
 		return fmt.Errorf("failed to send file: %w", err)
 	}
 
 	// 更新传输进度
-	entry.Offset = fileInfo.Size()
+	entry.Offset = (*fileInfo).Size()
 	entry.Completed = true
 
 	// 保存传输进度

@@ -43,22 +43,22 @@ func (nm *NetworkManager) removeConn(conn net.Conn) {
 	nm.Conns.Delete(conn.RemoteAddr().String())
 }
 
-// SendFile 异步地以块的形式发送文件
-func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string, offset int64) error {
+// SendFile 异步地以块的形式发送文件，并返回文件信息
+func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath string, offset int64) (*os.FileInfo, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
+		return nil, fmt.Errorf("failed to get file info: %w", err)
 	}
 
 	// 跳过已传输的部分
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to seek file: %w", err)
+		return nil, fmt.Errorf("failed to seek file: %w", err)
 	}
 
 	// 初始块大小
@@ -79,7 +79,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 		// 读取文件块
 		n, err := nm.readFileChunk(file, buffer[:chunkSize])
 		if err != nil && err != io.EOF {
-			return fmt.Errorf("failed to read file chunk: %w", err)
+			return nil, fmt.Errorf("failed to read file chunk: %w", err)
 		}
 
 		// 异步发送文件块
@@ -90,7 +90,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 
 		// 等待发送结果
 		if err := <-resultChan; err != nil {
-			return fmt.Errorf("failed to send file chunk: %w", err)
+			return nil, fmt.Errorf("failed to send file chunk: %w", err)
 		}
 
 		totalBytesSent += int64(n)
@@ -110,7 +110,7 @@ func (nm *NetworkManager) SendFile(conn net.Conn, filePath string, relPath strin
 		"duration":   time.Since(startTime).String(),
 	}).Info("File sent successfully")
 
-	return nil
+	return &fileInfo, nil
 }
 
 // readFileChunk 读取文件的指定块
