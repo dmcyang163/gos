@@ -23,7 +23,7 @@ var jsonBufferPool = sync.Pool{
 	},
 }
 
-// MessageHandler defines the interface for handling messages.
+// MessageHandler 定义了消息处理的接口。
 type MessageHandler interface {
 	HandleMessage(n *Node, conn net.Conn, msg Message)
 }
@@ -38,7 +38,7 @@ func sendMessage(n *Node, conn net.Conn, msgType string, data string) {
 	})
 }
 
-// PeerListHandler handles "peer_list" messages.
+// PeerListHandler 处理 "peer_list" 消息。
 type PeerListHandler struct{}
 
 func (h *PeerListHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
@@ -54,7 +54,7 @@ func (h *PeerListHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 
 	for _, peer := range peers {
 		if peer == ":"+n.Port {
-			continue // Skip self
+			continue // 跳过自身
 		}
 
 		if _, loaded := n.peers.KnownPeers.LoadOrStore(peer, PeerInfo{Address: peer, LastSeen: time.Now()}); !loaded {
@@ -64,7 +64,7 @@ func (h *PeerListHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	}
 }
 
-// PeerListRequestHandler handles "peer_list_request" messages.
+// PeerListRequestHandler 处理 "peer_list_request" 消息。
 type PeerListRequestHandler struct{}
 
 func (h *PeerListRequestHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
@@ -72,7 +72,7 @@ func (h *PeerListRequestHandler) HandleMessage(n *Node, conn net.Conn, msg Messa
 	n.sendPeerList(conn)
 }
 
-// ChatHandler handles "chat" messages.
+// ChatHandler 处理 "chat" 消息。
 type ChatHandler struct{}
 
 func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
@@ -100,7 +100,7 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	}()
 }
 
-// PingHandler handles "ping" messages.
+// PingHandler 处理 "ping" 消息。
 type PingHandler struct{}
 
 func (h *PingHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
@@ -109,7 +109,7 @@ func (h *PingHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	sendMessage(n, conn, MsgTypePong, "")
 }
 
-// PongHandler handles "pong" messages.
+// PongHandler 处理 "pong" 消息。
 type PongHandler struct{}
 
 func (h *PongHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
@@ -227,7 +227,7 @@ func (fb *fileBuffer) isFileComplete() bool {
 	return totalSize >= fb.size
 }
 
-// NodeStatusHandler handles "node_status" messages.
+// NodeStatusHandler 处理 "node_status" 消息。
 type NodeStatusHandler struct{}
 
 func (h *NodeStatusHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
@@ -254,13 +254,13 @@ func (h *NodeStatusHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 	sendMessage(n, conn, MsgTypeNodeStatus, string(statusBytes))
 }
 
-// shouldReplyToMessage decides whether to reply to a message.
+// shouldReplyToMessage 决定是否回复消息。
 func shouldReplyToMessage(msg Message) bool {
 	// 只有在消息包含 "hello" 时才回复
 	return strings.Contains(msg.Data, "hello")
 }
 
-// generateMessageID generates a unique message ID.
+// generateMessageID 生成唯一的 message ID。
 func generateMessageID() string {
 	// return uuid.New().String()
 
