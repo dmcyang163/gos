@@ -29,3 +29,5 @@ go.work.sum
 
 /test-data/
 /received_files/
+/log/
+/progress/
