@@ -6,25 +6,30 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"github.com/jxskiss/base62"
+	"github.com/rs/xid"
 )
 
-//	func generateBase62UUID() string {
-//		uuidBytes := uuid.New()
-//		encoded := base62.Encode(uuidBytes[:])
-//		return string(encoded)
-//	}
-func generateUUID() string {
+func GenerateXID() string {
+	return xid.New().String()
+}
+func GenerateBase62UUID() string {
+	uuidBytes := uuid.New()
+	encoded := base62.Encode(uuidBytes[:])
+	return string(encoded)
+}
+func GenerateUUID() string {
 	return uuid.New().String()
 }
 
 // generateTraceID 生成唯一的跟踪 ID。
 func GenerateTraceID() string {
-	return "trace-" + generateUUID()
+	return "trace-" + GenerateXID()
 }
 
 // generateMessageID 生成唯一的 message ID。
 func GenerateMessageID() string {
-	return "msg-" + generateUUID()
+	return "msg-" + GenerateXID()
 }
 
 // collectFiles 收集目录下的所有文件信息
