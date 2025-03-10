@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +9,8 @@ import (
 
 	"go.etcd.io/bbolt"
 )
+
+// 使用 jsoniter 替代标准库的 encoding/json
 
 // MsgStorage 定义消息存储的接口
 type MsgStorage interface {
@@ -61,8 +62,8 @@ func (s *BoltMsgStorage) Create(msg Message) error {
 			msg.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 		}
 
-		// 序列化 Message
-		messageBytes, err := json.Marshal(msg)
+		// 使用 jsoniter 序列化 Message
+		messageBytes, err := jniter.Marshal(msg)
 		if err != nil {
 			return fmt.Errorf("failed to marshal message: %w", err)
 		}
@@ -89,8 +90,8 @@ func (s *BoltMsgStorage) Read(msgType, msgID string) (Message, error) {
 			return fmt.Errorf("message not found: %s", msgID)
 		}
 
-		// 反序列化 Message
-		return json.Unmarshal(messageBytes, &msg)
+		// 使用 jsoniter 反序列化 Message
+		return jniter.Unmarshal(messageBytes, &msg)
 	})
 
 	return msg, err
@@ -113,8 +114,8 @@ func (s *BoltMsgStorage) Update(msg Message) error {
 			return fmt.Errorf("message not found: %s", msg.ID)
 		}
 
-		// 序列化 Message
-		messageBytes, err := json.Marshal(msg)
+		// 使用 jsoniter 序列化 Message
+		messageBytes, err := jniter.Marshal(msg)
 		if err != nil {
 			return fmt.Errorf("failed to marshal message: %w", err)
 		}
@@ -160,7 +161,7 @@ func (s *BoltMsgStorage) List(msgType string) ([]Message, error) {
 		// 遍历 bucket 中的所有消息
 		return bucket.ForEach(func(k, v []byte) error {
 			var msg Message
-			if err := json.Unmarshal(v, &msg); err != nil {
+			if err := jniter.Unmarshal(v, &msg); err != nil {
 				return fmt.Errorf("failed to unmarshal message: %w", err)
 			}
 			messages = append(messages, msg)
