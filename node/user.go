@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// User contains information about the user.
+// User 包含用户信息。
 type User struct {
 	UUID string `json:"uuid"`
 	Name string `json:"name"`
@@ -24,7 +24,7 @@ type User struct {
 	msgStorage  MsgStorage           // 消息存储接口
 }
 
-// NameEntry represents a name with its description and dialogues.
+// NameEntry 表示一个名称及其描述和对话。
 type NameEntry struct {
 	Name           string   `json:"name"`
 	Description    string   `json:"description"`
@@ -33,7 +33,7 @@ type NameEntry struct {
 	Dialogues      []string `json:"dialogues"`
 }
 
-// NewUser creates a new User instance with a unique UUID.
+// NewUser 创建一个新的 User 实例，并生成唯一的 UUID。
 func NewUser(name string, msgStorage MsgStorage) *User {
 	uuid, _ := uuid.NewRandom()
 	namesMap := loadNamesMap()
@@ -136,7 +136,7 @@ func (u *User) Logout() {
 	u.LastSeen = time.Now().Unix()
 }
 
-// SaveUser saves the user information to a file.
+// SaveUser 将用户信息保存到文件。
 func SaveUser(user *User, filename string) error {
 	data, err := json.MarshalIndent(user, "", "  ")
 	if err != nil {
@@ -150,7 +150,7 @@ func SaveUser(user *User, filename string) error {
 	return nil
 }
 
-// LoadUser loads user information from a file.
+// LoadUser 从文件加载用户信息。
 func LoadUser(filename string) (*User, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {

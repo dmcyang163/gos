@@ -102,6 +102,11 @@ func (h *ChatHandler) HandleMessage(n *Node, conn net.Conn, msg Message) {
 			"message":   msg.Data,
 		}).Info("Chat message")
 
+		// 保存聊天消息
+		if err := n.User.SaveMessage(msg); err != nil {
+			n.logger.WithError(err).Error("Failed to save chat message")
+		}
+
 		// 彩色显示接收到的消息
 		color.Cyan("%s: %s\n", msg.Sender, msg.Data)
 
