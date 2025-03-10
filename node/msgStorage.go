@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"go.etcd.io/bbolt"
@@ -23,6 +24,7 @@ type MsgStorage interface {
 // BoltMsgStorage 是基于 bbolt 的消息存储实现
 type BoltMsgStorage struct {
 	db *bbolt.DB
+	mu sync.Mutex // 用于保护共享状态（如果有）
 }
 
 // NewBoltMsgStorage 创建一个新的 BoltMsgStorage 实例
@@ -44,6 +46,9 @@ func NewBoltMsgStorage(dbPath string) (*BoltMsgStorage, error) {
 
 // Create 插入一条新消息
 func (s *BoltMsgStorage) Create(msg Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		// 根据消息类型创建或获取 bucket
 		bucket, err := tx.CreateBucketIfNotExists([]byte(msg.Type))
@@ -93,6 +98,9 @@ func (s *BoltMsgStorage) Read(msgType, msgID string) (Message, error) {
 
 // Update 更新指定消息
 func (s *BoltMsgStorage) Update(msg Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		// 获取指定类型的 bucket
 		bucket := tx.Bucket([]byte(msg.Type))
@@ -118,6 +126,9 @@ func (s *BoltMsgStorage) Update(msg Message) error {
 
 // Delete 删除指定消息
 func (s *BoltMsgStorage) Delete(msgType, msgID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		// 获取指定类型的 bucket
 		bucket := tx.Bucket([]byte(msgType))

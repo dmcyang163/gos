@@ -24,12 +24,12 @@ func GenerateUUID() string {
 
 // generateTraceID 生成唯一的跟踪 ID。
 func GenerateTraceID() string {
-	return "trace-" + GenerateXID()
+	return "" + GenerateXID()
 }
 
 // generateMessageID 生成唯一的 message ID。
 func GenerateMessageID() string {
-	return "msg-" + GenerateXID()
+	return "" + GenerateXID()
 }
 
 // collectFiles 收集目录下的所有文件信息
