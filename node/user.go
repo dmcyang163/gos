@@ -21,6 +21,7 @@ type User struct {
 	IsInvisible bool                 `json:"is_invisible"` // 是否隐身
 	LastSeen    int64                `json:"last_seen"`    // 最后活跃时间
 	namesMap    map[string]NameEntry // 存储名称和 NameEntry 的映射
+	msgStorage  MsgStorage           // 消息存储接口
 }
 
 // NameEntry represents a name with its description and dialogues.
@@ -33,19 +34,36 @@ type NameEntry struct {
 }
 
 // NewUser creates a new User instance with a unique UUID.
-func NewUser(name string) *User {
+func NewUser(name string, msgStorage MsgStorage) *User {
 	uuid, _ := uuid.NewRandom()
 	namesMap := loadNamesMap()
 	nameEntry, _ := GetRandomNameEntry(namesMap)
 	name_ := nameEntry.Name
+
 	return &User{
 		UUID:        uuid.String(),
 		Name:        name_,
 		IsOnline:    false,
 		IsInvisible: false,
 		LastSeen:    time.Now().Unix(),
-		namesMap:    namesMap, // 从 names.json 加载 namesMap
+		namesMap:    namesMap,   // 从 names.json 加载 namesMap
+		msgStorage:  msgStorage, // 初始化消息存储
 	}
+}
+
+// SaveMessage 保存消息
+func (u *User) SaveMessage(msg Message) error {
+	return u.msgStorage.Create(msg)
+}
+
+// LoadMessages 加载指定类型的消息
+func (u *User) LoadMessages(msgType string) ([]Message, error) {
+	return u.msgStorage.List(msgType)
+}
+
+// Close 关闭消息存储
+func (u *User) Close() error {
+	return u.msgStorage.Close()
 }
 
 // loadNamesMap 从 names.json 文件中加载 namesMap

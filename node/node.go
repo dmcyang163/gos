@@ -63,7 +63,19 @@ func (n *Node) handlePeerListRequest(event event.Event) {
 
 // NewNode 创建一个新的 Node 实例。
 func NewNode(config *Config, logger utils.Logger, executor utils.TaskExecutor) *Node {
-	user := NewUser("")
+	// 初始化消息存储
+	msgStorage, err := NewBoltMsgStorage(config.DBPath)
+	if err != nil {
+		logger.WithError(err).Error("Failed to initialize message storage")
+		return nil
+	}
+
+	// 初始化用户
+	user := NewUser("", msgStorage)
+	if user == nil {
+		logger.Error("Failed to initialize user")
+		return nil
+	}
 
 	// 初始化消息路由器
 	router := NewMessageRouter(logger)

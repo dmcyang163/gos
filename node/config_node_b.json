@@ -5,6 +5,7 @@
     "max_conns": 100,
     "discovery_interval": 10,
     "heartbeat_interval": 5,
+    "db_path": "data/node_b_messages.db",
     "log": {
         "level": "warn",
         "max_size": 100,

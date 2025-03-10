@@ -16,6 +16,7 @@ type Config struct {
 	DiscoveryInterval int             `json:"discovery_interval"`
 	HeartbeatInterval int             `json:"heartbeat_interval"`
 	Log               utils.LogConfig `json:"log"`
+	DBPath            string          `json:"db_path"` // 添加数据库路径字段
 }
 
 // ConfigLoader 是配置文件加载器的接口
