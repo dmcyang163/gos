@@ -42,7 +42,7 @@ func (ui *MainUI) CreateNavBar() *fyne.Container {
 // Render 渲染主 UI 布局
 func (ui *MainUI) Render() fyne.CanvasObject {
 	// 创建中部内容区域
-	ui.ContentArea = container.NewMax()
+	ui.ContentArea = container.NewStack()
 
 	// 初始化首页
 	SwitchToHome(ui)
