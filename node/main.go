@@ -7,6 +7,7 @@ import (
 	_ "net/http/pprof"
 	"node/ui"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 )
 
@@ -22,6 +23,9 @@ func main() {
 
 	// 设置窗口内容
 	myWindow.SetContent(mainUI.Render())
+
+	// 设置窗口的最小大小（可选）
+	myWindow.Resize(fyne.NewSize(400, 600)) // 设置窗口大小为 400x600
 
 	// 显示窗口并运行应用
 	myWindow.ShowAndRun()

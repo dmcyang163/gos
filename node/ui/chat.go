@@ -21,6 +21,8 @@ func NewChatUI(window fyne.Window) *ChatUI {
 		Window:   window,
 		Messages: []string{},
 	}
+	// 设置窗口的初始大小
+	window.Resize(fyne.NewSize(400, 600)) // 设置窗口大小为 400x600
 
 	ui.MessageEntry = widget.NewEntry()
 	ui.MessageEntry.SetPlaceHolder("输入消息...")
