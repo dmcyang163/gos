@@ -3,6 +3,7 @@ package ui
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -22,20 +23,29 @@ func NewMainUI(window fyne.Window) *MainUI {
 
 // CreateNavBar 创建底部导航栏
 func (ui *MainUI) CreateNavBar() *fyne.Container {
-	navBar := container.NewHBox(
-		widget.NewButton("首页", func() {
-			SwitchToHome(ui)
-		}),
-		widget.NewButton("聊天", func() {
-			SwitchToChat(ui)
-		}),
-		widget.NewButton("联系人", func() {
-			SwitchToContacts(ui)
-		}),
-		widget.NewButton("我的", func() {
-			SwitchToProfile(ui)
-		}),
+	// 创建导航栏按钮
+	homeButton := widget.NewButton("首页", func() {
+		SwitchToHome(ui)
+	})
+	chatButton := widget.NewButton("聊天", func() {
+		SwitchToChat(ui)
+	})
+	contactsButton := widget.NewButton("联系人", func() {
+		SwitchToContacts(ui)
+	})
+	profileButton := widget.NewButton("我的", func() {
+		SwitchToProfile(ui)
+	})
+
+	// 使用 GridLayout 将按钮均匀分布
+	navBar := container.New(
+		layout.NewGridLayout(4), // 4 个按钮，均匀分布
+		homeButton,
+		chatButton,
+		contactsButton,
+		profileButton,
 	)
+
 	return navBar
 }
 
